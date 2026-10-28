@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Runs hier_restore on every test design with every synthesis flow and checks the result.
 
-Each directory below tests/cases holds a hand-written design and an expect.json:
+Each directory below tests/cases (hand-written designs) and tests/examples (open-source designs, see their
+SOURCE.md) holds the design and an expect.json:
 
     {
       "top": "top",                      # top module, default "top"
@@ -34,7 +35,7 @@ from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CASES = [HERE / "cases"]
+CASES = [HERE / "cases", HERE / "examples"]
 PLUGIN = HERE.parent / "hier_restore.so"
 
 FLOWS = {

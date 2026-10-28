@@ -1,0 +1,10 @@
+{
+  "top": "fpga_core",
+  "files": [
+    "fpga_core.v",
+    "uart.v",
+    "uart_tx.v",
+    "uart_rx.v"
+  ],
+  "expect": []
+}

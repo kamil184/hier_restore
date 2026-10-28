@@ -1,0 +1,11 @@
+{
+  "top": "fpga_top",
+  "files": [
+    "spi2.v",
+    "spi_module.v",
+    "clock_divider.v",
+    "pos_edge_det.v",
+    "neg_edge_det.v"
+  ],
+  "expect": []
+}

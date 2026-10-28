@@ -1,0 +1,12 @@
+{
+  "top": "FIFO_UART_RX",
+  "files": [
+    "FIFO_UART_RX.v",
+    "FIFO_ALL.v",
+    "FIFO_BUFF.v",
+    "FIFO_WR.v",
+    "FIFO_RD.v",
+    "UART_RX.v"
+  ],
+  "expect": []
+}

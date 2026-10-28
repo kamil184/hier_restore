@@ -1,0 +1,14 @@
+{
+  "top": "axi_crossbar",
+  "files": [
+    "axi_crossbar.v",
+    "axi_crossbar_wr.v",
+    "axi_crossbar_rd.v",
+    "axi_crossbar_addr.v",
+    "axi_register_wr.v",
+    "axi_register_rd.v",
+    "arbiter.v",
+    "priority_encoder.v"
+  ],
+  "expect": []
+}

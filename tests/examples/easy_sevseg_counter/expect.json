@@ -1,0 +1,10 @@
+{
+  "top": "de0_nano_soc_baseline",
+  "files": [
+    "de0_nano_soc_baseline.v",
+    "tick_1hz.v",
+    "counters_sevseg.v",
+    "display_sevseg.v"
+  ],
+  "expect": []
+}
