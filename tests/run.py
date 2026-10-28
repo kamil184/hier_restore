@@ -18,6 +18,7 @@ SOURCE.md) holds the design and an expect.json:
 
 Independent of expect.json, every run is checked for these invariants:
   - every cell carries the hier_* attributes and they match the JSON report,
+  - every wire carries hier_scope with a known instance,
   - statuses are consistent with candidates and the placed scope,
   - the netlist is unchanged apart from the hier_* attributes,
   - a second run yields the identical report.
@@ -75,8 +76,8 @@ def top_module(netlist):
 
 def strip_hier(netlist):
     for module in netlist["modules"].values():
-        for cell in module.get("cells", {}).values():
-            cell["attributes"] = {k: v for k, v in cell.get("attributes", {}).items() if not k.startswith("hier_")}
+        for item in [*module.get("cells", {}).values(), *module.get("netnames", {}).values()]:
+            item["attributes"] = {k: v for k, v in item.get("attributes", {}).items() if not k.startswith("hier_")}
     return netlist
 
 
@@ -137,6 +138,13 @@ def check_invariants(base, annotated, report, again, annotated_again):
             errors.append(f"cell {name}: hier_candidates does not match the report")
     if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
         errors.append("report and netlist disagree on the number of cells")
+
+    for name, net in top["netnames"].items():
+        scope = json_string(net.get("attributes", {}).get("hier_scope"))
+        if scope is None:
+            errors.append(f"wire {name} has no hier_scope")
+        elif tuple(scope.split()) not in scopes:
+            errors.append(f"wire {name}: placed in unknown scope {scope!r}")
 
     for c in rep["cells"]:
         status, cands = c["status"], c["candidates"]

@@ -46,6 +46,12 @@ The top module is the empty string.
 | `ambiguous` | the cell comes from one of several instances, which one is unknown | innermost instance containing all candidates |
 | `unknown` | no usable information | top module |
 
+### Wire attributes
+
+Every wire gets a `hier_scope` with the instance it lies in.
+A wire whose name still tells its instance (`hdlname`, or a plain name in the top module) stays in that instance.
+Any other wire lies in the innermost instance that contains all cells connected to it, so that a viewer can route it to each of them.
+
 ### Instance attributes
 
 Every `$scopeinfo` cell gets a `hier_status`:
@@ -100,7 +106,7 @@ python3 tests/run.py --case demo --show     # one case, with the status of every
 
 Each directory in `tests/cases` (hand-written designs) and `tests/examples` (open-source designs) holds a design and an `expect.json`; `tests/run.py` describes the format.
 Every case runs with `synth_ice40`, `synth -flatten`, `synth_ecp5`, `synth_gowin` and `synth_xilinx -flatten`.
-Besides the expectations, every run checks that all cells are annotated consistently, that the netlist is unchanged apart from the `hier_*` attributes and that a second run yields the identical report.
+Besides the expectations, every run checks that all cells are annotated consistently, that every wire is placed in a known instance, that the netlist is unchanged apart from the `hier_*` attributes and that a second run yields the identical report.
 The second run sees the cells and wires in a different order, so it also catches results that depend on that order.
 yosys itself names `$display` cells after memory addresses, so for designs with such cells (`mid_axi_crossbar`) the netlists of two runs differ and reproducibility is not checked.
 

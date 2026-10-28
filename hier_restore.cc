@@ -6,6 +6,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 USING_YOSYS_NAMESPACE
@@ -644,6 +645,36 @@ struct HierRestoreWorker {
 		for (auto &s : storage)
 			if (s->info != nullptr)
 				s->info->set_string_attribute(ID(hier_status), s->status());
+
+		place_wires();
+	}
+
+	// A wire whose name still tells its instance stays there. Any other wire lies in the innermost instance
+	// that contains all cells connected to it, so that it can reach each of them.
+	void place_wires()
+	{
+		dict<RTLIL::SigBit, std::vector<Scope *>> bit_cells;
+		for (auto &c : cells)
+			for (auto &conn : c.cell->connections())
+				for (auto bit : sigmap(conn.second))
+					if (bit.wire != nullptr)
+						bit_cells[bit].push_back(c.scope);
+
+		for (auto wire : top->wires()) {
+			Scope *s = wire_scope(wire).first;
+			if (s == nullptr) {
+				std::optional<Path> lca;
+				for (auto bit : sigmap(wire)) {
+					auto it = bit_cells.find(bit);
+					if (it == bit_cells.end())
+						continue;
+					for (auto cs : it->second)
+						lca = lca ? common_ancestor(*lca, cs->path) : cs->path;
+				}
+				s = lca ? scope_at(*lca) : root;
+			}
+			wire->attributes[ID(hier_scope)] = RTLIL::Const(path_str(s->path));
+		}
 	}
 
 	void log_tree(Scope *s, int depth)
@@ -743,6 +774,8 @@ struct HierRestorePass : public Pass {
 		log("                      involved, separated by '|'\n");
 		log("    hier_evidence     on every cell: what the result is based on, a comma\n");
 		log("                      separated subset of hdlname, src, net, name\n");
+		log("    hier_scope        on every wire: the instance its name belongs to, or the\n");
+		log("                      innermost instance that contains all connected cells\n");
 		log("    hier_status       on every $scopeinfo cell, one of:\n");
 		log("                        complete   cells were placed here, none is shared\n");
 		log("                        partial    some logic was merged with other instances\n");
