@@ -2,7 +2,7 @@
 # so only take the flags from it and compile with the local toolchain.
 CXX ?= clang++
 YOSYS_FLAGS := $(shell yosys-config --cxxflags --ldflags)
-PLUGINS := hier_dump.so
+PLUGINS := hier_dump.so hier_restore.so
 
 all: $(PLUGINS)
 
@@ -10,6 +10,6 @@ all: $(PLUGINS)
 	$(CXX) -shared -o $@ $< $(YOSYS_FLAGS)
 
 clean:
-	rm -f $(PLUGINS)
+	rm -f $(PLUGINS) hier.json
 
 .PHONY: all clean
