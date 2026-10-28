@@ -1,0 +1,9 @@
+{
+  "top": "top",
+  "expect": [
+    {"scope": ["u_p"], "status": ["absorbed"]},
+    {"scope": ["u_q"], "status": ["absorbed"]},
+    {"merged_with": [["u_p"], ["u_q"]]},
+    {"status": "unknown", "max": 0}
+  ]
+}

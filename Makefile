@@ -9,7 +9,10 @@ all: $(PLUGINS)
 %.so: %.cc
 	$(CXX) -shared -o $@ $< $(YOSYS_FLAGS)
 
+test: hier_restore.so
+	python3 tests/run.py
+
 clean:
 	rm -f $(PLUGINS) hier.json
 
-.PHONY: all clean
+.PHONY: all test clean

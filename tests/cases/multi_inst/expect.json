@@ -1,0 +1,121 @@
+{
+  "top": "top",
+  "expect": [
+    {
+      "scope": [
+        "u_a"
+      ],
+      "status": [
+        "complete"
+      ],
+      "flows": [
+        "ice40",
+        "generic",
+        "ecp5",
+        "xilinx"
+      ]
+    },
+    {
+      "scope": [
+        "u_b"
+      ],
+      "status": [
+        "complete"
+      ],
+      "flows": [
+        "ice40",
+        "generic",
+        "ecp5",
+        "xilinx"
+      ]
+    },
+    {
+      "scope": [
+        "u_c"
+      ],
+      "status": [
+        "complete"
+      ],
+      "flows": [
+        "ice40",
+        "generic",
+        "ecp5",
+        "xilinx"
+      ]
+    },
+    {
+      "status": "merged",
+      "max": 0,
+      "flows": [
+        "ice40",
+        "generic",
+        "ecp5",
+        "xilinx"
+      ]
+    },
+    {
+      "scope": [
+        "u_a"
+      ],
+      "status": [
+        "partial"
+      ],
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "scope": [
+        "u_b"
+      ],
+      "status": [
+        "partial"
+      ],
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "scope": [
+        "u_c"
+      ],
+      "status": [
+        "partial"
+      ],
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "merged_with": [
+        [
+          "u_a"
+        ],
+        [
+          "u_b"
+        ],
+        [
+          "u_c"
+        ]
+      ],
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "status": "merged",
+      "max": 2,
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "status": "ambiguous",
+      "max": 0
+    },
+    {
+      "status": "unknown",
+      "max": 0
+    }
+  ]
+}

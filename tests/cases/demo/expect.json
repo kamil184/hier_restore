@@ -1,0 +1,58 @@
+{
+  "top": "top",
+  "expect": [
+    {
+      "scope": [
+        "u_cnt"
+      ],
+      "status": [
+        "complete"
+      ],
+      "flows": [
+        "ice40",
+        "generic",
+        "ecp5",
+        "xilinx"
+      ]
+    },
+    {
+      "scope": [
+        "u_cnt"
+      ],
+      "status": [
+        "partial"
+      ],
+      "flows": [
+        "gowin"
+      ]
+    },
+    {
+      "scope": [
+        "u_alu",
+        "u_logic"
+      ],
+      "status": [
+        "empty",
+        "absorbed"
+      ]
+    },
+    {
+      "status": "unknown",
+      "max": 0
+    },
+    {
+      "merged_with": [
+        [
+          "u_alu"
+        ],
+        [
+          "u_alu",
+          "u_add"
+        ]
+      ],
+      "flows": [
+        "ice40"
+      ]
+    }
+  ]
+}

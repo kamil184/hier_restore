@@ -1,0 +1,12 @@
+{
+  "top": "top",
+  "expect": [
+    {"scope": ["u_l1"], "status": ["complete"]},
+    {"scope": ["u_l1", "u_l2"], "status": ["complete"]},
+    {"scope": ["u_l1", "u_l2", "u_l3"], "status": ["complete"]},
+    {"scope": ["u_l1", "u_l2", "u_l3", "u_leaf"], "status": ["complete"]},
+    {"status": "merged", "max": 0},
+    {"status": "ambiguous", "max": 0},
+    {"status": "unknown", "max": 0}
+  ]
+}

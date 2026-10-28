@@ -1,0 +1,11 @@
+{
+  "top": "top",
+  "expect": [
+    {"scope": ["gen[0].u_stage"], "status": ["complete"]},
+    {"scope": ["gen[1].u_stage"], "status": ["complete"]},
+    {"scope": ["gen[2].u_stage"], "status": ["complete"]},
+    {"status": "merged", "max": 0},
+    {"status": "ambiguous", "max": 0},
+    {"status": "unknown", "max": 0}
+  ]
+}

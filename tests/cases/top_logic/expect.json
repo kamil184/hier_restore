@@ -1,0 +1,11 @@
+{
+  "top": "top",
+  "expect": [
+    {"scope": [], "status": ["complete"]},
+    {"scope": ["u_cnt"], "status": ["complete"]},
+    {"scope": ["u_pass"], "status": ["empty"]},
+    {"status": "merged", "max": 0},
+    {"status": "ambiguous", "max": 0},
+    {"status": "unknown", "max": 0}
+  ]
+}
