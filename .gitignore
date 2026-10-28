@@ -1,0 +1,11 @@
+# build output
+*.so
+*.dSYM/
+
+# output of demo.sh and manual runs
+hier.json
+*.dot
+*.svg
+
+__pycache__/
+.DS_Store
