@@ -3,11 +3,12 @@
 CXX ?= clang++
 YOSYS_FLAGS := $(shell yosys-config --cxxflags --ldflags)
 PLUGINS := hier_restore.so
+SRCS := $(wildcard src/*.cc)
 
 all: $(PLUGINS)
 
-%.so: %.cc
-	$(CXX) -shared -o $@ $< $(YOSYS_FLAGS)
+hier_restore.so: $(SRCS) $(wildcard src/*.h)
+	$(CXX) -shared -o $@ $(SRCS) $(YOSYS_FLAGS)
 
 test: hier_restore.so
 	python3 tests/run.py

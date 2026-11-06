@@ -14,6 +14,18 @@ yosys -m ./hier_restore.so -p "read_verilog design.v; synth_ice40 -top top; hier
 `yosys-config --build` does not work with the OSS CAD Suite on macOS, so the Makefile takes only the flags from `yosys-config` and compiles with the local `clang++`.
 The plugin is tied to the yosys version it was built against and must be rebuilt after updating the OSS CAD Suite.
 
+## Source layout
+
+| File | Content |
+|---|---|
+| `src/types.h`, `src/util.cc` | paths, source locations, cell and instance records, JSON helpers |
+| `src/worker.h` | the state of one run and its steps |
+| `src/scopes.cc` | instances from `$scopeinfo` cells and the instances each signal bit is visible in |
+| `src/cells.cc` | assigning cells to instances and deciding their status |
+| `src/worker.cc` | the order of the steps, writing the attributes, placing wires |
+| `src/report.cc` | log output and JSON report |
+| `src/pass.cc` | the `hier_restore` command, its help and options |
+
 ## Requirements on the input
 
 The design must be flattened with `$scopeinfo` cells.
