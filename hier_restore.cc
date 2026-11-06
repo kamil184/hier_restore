@@ -635,9 +635,11 @@ struct HierRestoreWorker {
 			c.cell->set_string_attribute(ID(hier_status), status_name(c.status));
 			c.cell->attributes.erase(ID(hier_candidates));
 			if (!c.candidates.empty()) {
+				// & joins the instances a merged cell belongs to all of, | those an ambiguous cell belongs to one of
+				const char *sep = c.status == CellStatus::Merged ? "&" : "|";
 				std::string s;
 				for (size_t i = 0; i < c.candidates.size(); i++)
-					s += (i ? "|" : "") + path_str(c.candidates[i]->path);
+					s += (i ? sep : "") + path_str(c.candidates[i]->path);
 				c.cell->set_string_attribute(ID(hier_candidates), s);
 			}
 			c.cell->set_string_attribute(ID(hier_evidence), join(c.evidence, ","));
@@ -771,7 +773,8 @@ struct HierRestorePass : public Pass {
 		log("                      merged and ambiguous cells are placed in the innermost\n");
 		log("                      instance that contains all candidates.\n");
 		log("    hier_candidates   on merged and ambiguous cells: the instance paths\n");
-		log("                      involved, separated by '|'\n");
+		log("                      involved, separated by '&' on merged cells (all of\n");
+		log("                      them) and by '|' on ambiguous cells (one of them)\n");
 		log("    hier_evidence     on every cell: what the result is based on, a comma\n");
 		log("                      separated subset of hdlname, src, net, name\n");
 		log("    hier_scope        on every wire: the instance its name belongs to, or the\n");

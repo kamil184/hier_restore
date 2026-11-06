@@ -35,7 +35,7 @@ The top module is the empty string.
 |---|---|---|
 | `hier_scope` | every cell | instance the cell is placed in |
 | `hier_status` | every cell | `unique`, `inferred`, `merged`, `ambiguous` or `unknown` |
-| `hier_candidates` | `merged` and `ambiguous` cells | instance paths involved, separated by `\|` |
+| `hier_candidates` | `merged` and `ambiguous` cells | instance paths involved, separated by `&` for `merged` (all of them) and by `\|` for `ambiguous` (one of them) |
 | `hier_evidence` | every cell | what the result is based on: comma separated subset of `hdlname`, `src`, `net`, `name` |
 
 | `hier_status` | Meaning | `hier_scope` |

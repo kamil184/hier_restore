@@ -134,7 +134,8 @@ def check_invariants(base, annotated, report, again, annotated_again):
             continue
         if attrs.get("hier_status") != r["status"] or json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
             errors.append(f"cell {name}: attributes do not match the report")
-        if json_string(attrs.get("hier_candidates", "")) != "|".join(path_str(p) for p in r["candidates"]):
+        sep = "&" if r["status"] == "merged" else "|"
+        if json_string(attrs.get("hier_candidates", "")) != sep.join(path_str(p) for p in r["candidates"]):
             errors.append(f"cell {name}: hier_candidates does not match the report")
     if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
         errors.append("report and netlist disagree on the number of cells")
