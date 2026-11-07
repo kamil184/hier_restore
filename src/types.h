@@ -7,6 +7,7 @@
 #include <climits>
 #include <map>
 #include <set>
+#include <tuple>
 
 USING_YOSYS_NAMESPACE
 
@@ -41,11 +42,13 @@ struct Scope {
 	std::map<CellStatus, int> own;
 	int mentions = 0; // merged or ambiguous cells listing this scope as a candidate
 
-	const char *status() const
+	// With all_cells, merged and ambiguous cells drawn here count as its own (see hier_restore -inside).
+	const char *status(bool all_cells) const
 	{
 		int placed = 0;
-		for (auto s : {CellStatus::Unique, CellStatus::Inferred})
-			placed += own.count(s) ? own.at(s) : 0;
+		for (auto &kv : own)
+			if (all_cells || kv.first == CellStatus::Unique || kv.first == CellStatus::Inferred)
+				placed += kv.second;
 		if (placed > 0)
 			return mentions > 0 ? "partial" : "complete";
 		return mentions > 0 ? "absorbed" : "empty";

@@ -151,6 +151,48 @@ void HierRestoreWorker::set_result(CellInfo &c, CellStatus status, const ScopeSe
 		c.candidates.assign(scopes.begin(), scopes.end());
 }
 
+// With -inside, merged and ambiguous cells are drawn in one of their candidates instead of the instance
+// containing all of them. Cells joined by wires without a reliable name lie in one instance, so each such
+// group with the same candidates makes one choice: the candidate most of their source locations point to,
+// else the innermost one, else the one most of their names point to, else the first by path.
+void HierRestoreWorker::place_inside()
+{
+	auto open = [](const CellInfo &c) { return c.status == CellStatus::Merged || c.status == CellStatus::Ambiguous; };
+	std::vector<bool> done(cells.size());
+	for (int i = 0; i < (int)cells.size(); i++) {
+		if (done[i] || !open(cells[i]))
+			continue;
+		const std::vector<Scope *> &cands = cells[i].candidates;
+		std::vector<int> group{i};
+		done[i] = true;
+		for (size_t g = 0; g < group.size(); g++)
+			for (auto bit : cells[group[g]].unnamed)
+				for (int j : users.at(bit))
+					if (!done[j] && open(cells[j]) && cells[j].candidates == cands) {
+						done[j] = true;
+						group.push_back(j);
+					}
+
+		std::map<Scope *, std::pair<int, int>, ByPath> votes; // by source location, by name
+		for (int m : group) {
+			const CellInfo &c = cells[m];
+			Scope *named = name_scope(c.name);
+			for (auto s : cands) {
+				if (std::any_of(c.groups.begin(), c.groups.end(), [&](const ScopeSet &g) { return g.count(s) > 0; }))
+					votes[s].first++;
+				votes[s].second += s == named;
+			}
+		}
+		auto rank = [&](Scope *s) { return std::make_tuple(votes[s].first, s->path.size(), votes[s].second); };
+		Scope *best = cands.front();
+		for (auto s : cands)
+			if (rank(s) > rank(best))
+				best = s;
+		for (int m : group)
+			cells[m].scope = best;
+	}
+}
+
 // No single instance fits: collect the instances the pieces of the cell come from.
 void HierRestoreWorker::resolve_merged(CellInfo &c)
 {

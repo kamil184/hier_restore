@@ -6,7 +6,7 @@ namespace hier_restore {
 
 void HierRestoreWorker::log_tree(Scope *s, int depth)
 {
-	log("  %*s%s  [%s]  %s", depth * 2, "", s == root ? "<top>" : s->flat_name.c_str(), s->module.c_str(), s->status());
+	log("  %*s%s  [%s]  %s", depth * 2, "", s == root ? "<top>" : s->flat_name.c_str(), s->module.c_str(), s->status(inside));
 	for (auto &kv : s->own)
 		log("  %s=%d", status_name(kv.first), kv.second);
 	if (s->mentions > 0)
@@ -40,7 +40,7 @@ void HierRestoreWorker::write_report(const std::string &filename)
 	bool first = true;
 	for (auto s : all_scopes) {
 		os << (first ? "\n" : ",\n") << "    {\"path\": " << json_path(s->path) << ", \"module\": " << json_str(s->module)
-		   << ", \"status\": " << json_str(s->status()) << ", \"cells\": {";
+		   << ", \"status\": " << json_str(s->status(inside)) << ", \"cells\": {";
 		bool first_count = true;
 		for (auto &kv : s->own) {
 			os << (first_count ? "" : ", ") << json_str(status_name(kv.first)) << ": " << kv.second;

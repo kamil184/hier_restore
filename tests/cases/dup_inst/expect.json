@@ -1,9 +1,62 @@
 {
   "top": "top",
   "expect": [
-    {"scope": ["u_p"], "status": ["absorbed"]},
-    {"scope": ["u_q"], "status": ["absorbed"]},
-    {"merged_with": [["u_p"], ["u_q"]]},
-    {"status": "unknown", "max": 0}
+    {
+      "scope": [
+        "u_p"
+      ],
+      "status": [
+        "absorbed"
+      ],
+      "inside": false
+    },
+    {
+      "scope": [
+        "u_p"
+      ],
+      "status": [
+        "absorbed",
+        "partial"
+      ],
+      "inside": true
+    },
+    {
+      "scope": [
+        "u_q"
+      ],
+      "status": [
+        "absorbed"
+      ],
+      "inside": false
+    },
+    {
+      "scope": [
+        "u_q"
+      ],
+      "status": [
+        "absorbed",
+        "partial"
+      ],
+      "inside": true
+    },
+    {
+      "merged_with": [
+        [
+          "u_p"
+        ],
+        [
+          "u_q"
+        ]
+      ]
+    },
+    {
+      "status": "unknown",
+      "max": 0
+    },
+    {
+      "status": "merged",
+      "min": 1,
+      "inside": true
+    }
   ]
 }

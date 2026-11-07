@@ -8,7 +8,7 @@ SOURCE.md) holds the design and an expect.json:
       "top": "top",                      # top module, default "top"
       "files": ["design.v"],             # Verilog files in read order, default ["design.v"]
       "flows": ["ice40", "generic"],     # flows to run, default all of FLOWS
-      "expect": [                        # each entry may be limited with "flows": [...]
+      "expect": [                        # each entry may be limited with "flows": [...] and "inside": true/false
         {"scope": ["u_a", "u_b"], "status": ["complete"]},
         {"status": "ambiguous", "max": 0},
         {"status": "merged", "min": 1},
@@ -19,7 +19,7 @@ SOURCE.md) holds the design and an expect.json:
 Independent of expect.json, every run is checked for these invariants:
   - every cell carries the hier_* attributes and they match the JSON report,
   - every wire carries hier_scope with a known instance,
-  - statuses are consistent with candidates and the placed scope,
+  - statuses are consistent with candidates and the placed scope (with --inside: one of the candidates),
   - the netlist is unchanged apart from the hier_* attributes,
   - a second run yields the identical report.
 """
@@ -58,15 +58,16 @@ def yosys(script, log):
         raise RuntimeError(f"yosys failed, see {log}:\n{proc.stderr[-2000:]}")
 
 
-def run_flow(case, flow, cfg, work):
+def run_flow(case, flow, cfg, work, inside):
     files = " ".join(f'"{case / f}"' for f in cfg.get("files", ["design.v"]))
     synth = FLOWS[flow].format(top=cfg.get("top", "top"))
     base, annotated, report = work / "base.json", work / "annotated.json", work / "report.json"
-    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore -o {report}; write_json {annotated}", work / "run.log")
+    cmd = "hier_restore -inside" if inside else "hier_restore"
+    yosys(f"read_verilog {files}; {synth}; write_json {base}; {cmd} -o {report}; write_json {annotated}", work / "run.log")
     # The write_json before the pass changes the order of cells and wires the pass sees, so the second run
     # also catches results that depend on the order of objects in the design.
     again, base_again = work / "report2.json", work / "base2.json"
-    yosys(f"read_verilog {files}; {synth}; hier_restore -o {again}; write_json {base_again}", work / "run2.log")
+    yosys(f"read_verilog {files}; {synth}; {cmd} -o {again}; write_json {base_again}", work / "run2.log")
     return base, annotated, report, again, base_again
 
 
@@ -106,7 +107,7 @@ def json_string(value):
     return value
 
 
-def check_invariants(base, annotated, report, again, annotated_again):
+def check_invariants(base, annotated, report, again, annotated_again, inside):
     errors, notes = [], []
     rep = json.loads(report.read_text())
 
@@ -154,15 +155,17 @@ def check_invariants(base, annotated, report, again, annotated_again):
         if tuple(c["scope"]) not in scopes:
             errors.append(f"cell {c['name']}: placed in unknown scope {c['scope']}")
         if status in ("merged", "ambiguous"):
-            if len(cands) < 2 or c["scope"] != common_ancestor(cands):
-                errors.append(f"cell {c['name']}: {status} needs >= 2 candidates and placement at their common ancestor")
+            placed_ok = c["scope"] in cands if inside else c["scope"] == common_ancestor(cands)
+            if len(cands) < 2 or not placed_ok:
+                where = "in one of them" if inside else "at their common ancestor"
+                errors.append(f"cell {c['name']}: {status} needs >= 2 candidates and placement {where}")
         elif cands:
             errors.append(f"cell {c['name']}: {status} must not list candidates")
         if status == "unknown" and c["scope"]:
             errors.append(f"cell {c['name']}: unknown cells belong in the top module")
 
     for s in rep["scopes"]:
-        placed = s["cells"].get("unique", 0) + s["cells"].get("inferred", 0)
+        placed = sum(s["cells"].values()) if inside else s["cells"].get("unique", 0) + s["cells"].get("inferred", 0)
         mentioned = s["mentions"] > 0
         want = ("partial" if mentioned else "complete") if placed else ("absorbed" if mentioned else "empty")
         if s["status"] != want:
@@ -170,12 +173,12 @@ def check_invariants(base, annotated, report, again, annotated_again):
     return rep, errors, notes
 
 
-def check_expectations(rep, expectations, flow):
+def check_expectations(rep, expectations, flow, inside):
     errors = []
     statuses = Counter(c["status"] for c in rep["cells"])
     scopes = {tuple(s["path"]): s for s in rep["scopes"]}
     for e in expectations:
-        if flow not in e.get("flows", [flow]):
+        if flow not in e.get("flows", [flow]) or e.get("inside", inside) != inside:
             continue
         if "scope" in e:
             s = scopes.get(tuple(e["scope"]))
@@ -205,6 +208,7 @@ def main():
     ap.add_argument("--flow", action="append", choices=sorted(FLOWS), help="run only these flows")
     ap.add_argument("--show", action="store_true", help="print the status of every scope")
     ap.add_argument("--keep", action="store_true", help="keep the work directories")
+    ap.add_argument("--inside", action="store_true", help="run hier_restore -inside")
     args = ap.parse_args()
 
     if not PLUGIN.exists():
@@ -222,8 +226,8 @@ def main():
             work = root / case.name / flow
             work.mkdir(parents=True)
             try:
-                rep, errors, notes = check_invariants(*run_flow(case, flow, cfg, work))
-                errors += check_expectations(rep, cfg.get("expect", []), flow)
+                rep, errors, notes = check_invariants(*run_flow(case, flow, cfg, work, args.inside), args.inside)
+                errors += check_expectations(rep, cfg.get("expect", []), flow, args.inside)
             except Exception as ex:  # a broken run is reported like any other failure
                 rep, errors, notes = None, [str(ex)], []
             failures += bool(errors)

@@ -32,7 +32,7 @@ struct HierRestorePass : public Pass {
 		log("                                   instances, which one is unknown\n");
 		log("                        unknown    no usable information, placed in the top\n");
 		log("                      merged and ambiguous cells are placed in the innermost\n");
-		log("                      instance that contains all candidates.\n");
+		log("                      instance that contains all candidates (see -inside).\n");
 		log("    hier_candidates   on merged and ambiguous cells: the instance paths\n");
 		log("                      involved, separated by '&' on merged cells (all of\n");
 		log("                      them) and by '|' on ambiguous cells (one of them)\n");
@@ -46,6 +46,14 @@ struct HierRestorePass : public Pass {
 		log("                        absorbed   all known logic was merged into other cells\n");
 		log("                        empty      no cell left, the logic was optimized away\n");
 		log("                                   or merged without a trace\n");
+		log("\n");
+		log("    -inside\n");
+		log("        place merged and ambiguous cells in one of their candidates instead of\n");
+		log("        the instance containing all of them, so that no cell leaves the\n");
+		log("        instances it came from: the candidate the source location points to,\n");
+		log("        else the innermost one, else the one the cell name points to, else\n");
+		log("        the first by path. hier_candidates still lists all of them, and the\n");
+		log("        status of an instance counts these cells as its own.\n");
 		log("\n");
 		log("    -o <file>\n");
 		log("        also write the result as a JSON report\n");
@@ -61,10 +69,15 @@ struct HierRestorePass : public Pass {
 		log_header(design, "Executing HIER_RESTORE pass.\n");
 
 		std::string sep = design->scratchpad_get_string("flatten.separator", "."), outfile;
+		bool inside = false;
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "-sep" && argidx + 1 < args.size()) {
 				sep = args[++argidx];
+				continue;
+			}
+			if (args[argidx] == "-inside") {
+				inside = true;
 				continue;
 			}
 			if (args[argidx] == "-o" && argidx + 1 < args.size()) {
@@ -81,7 +94,7 @@ struct HierRestorePass : public Pass {
 		if (top == nullptr)
 			log_cmd_error("No top module found.\n");
 
-		HierRestoreWorker worker(top, sep);
+		HierRestoreWorker worker(top, sep, inside);
 		worker.run();
 		worker.log_summary();
 		if (!outfile.empty())

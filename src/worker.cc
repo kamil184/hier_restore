@@ -26,6 +26,8 @@ void HierRestoreWorker::run()
 	propagate();
 	for (auto &c : cells)
 		resolve(c);
+	if (inside)
+		place_inside();
 
 	for (auto &c : cells) {
 		c.scope->own[c.status]++;
@@ -50,7 +52,7 @@ void HierRestoreWorker::run()
 	}
 	for (auto &s : storage)
 		if (s->info != nullptr)
-			s->info->set_string_attribute(ID(hier_status), s->status());
+			s->info->set_string_attribute(ID(hier_status), s->status(inside));
 
 	place_wires();
 }
