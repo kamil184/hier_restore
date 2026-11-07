@@ -12,45 +12,69 @@ CellInfo HierRestoreWorker::describe(RTLIL::Cell *cell)
 	if (!hdlname.empty()) {
 		Path p = split_tokens(hdlname, " ");
 		p.pop_back();
-		if (by_path.count(p)) {
+		if (by_path.count(p))
 			c.groups.push_back({by_path.at(p)});
-			c.evidence.insert("hdlname");
-		}
 	}
 	for (auto &r : parse_src(cell->get_string_attribute(ID::src))) {
 		ScopeSet alts = instances_at(r);
-		if (alts.empty() || std::find(c.groups.begin(), c.groups.end(), alts) != c.groups.end())
-			continue;
-		c.groups.push_back(alts);
-		c.evidence.insert("src");
+		if (!alts.empty() && std::find(c.groups.begin(), c.groups.end(), alts) == c.groups.end())
+			c.groups.push_back(alts);
 	}
 
-	for (auto &conn : cell->connections()) {
-		bool output = cell->output(conn.first);
+	for (auto &conn : cell->connections())
 		for (auto bit : sigmap(conn.second)) {
 			if (bit.wire == nullptr)
 				continue;
-			if (output)
-				c.outputs.push_back(bit);
 			auto it = bit_visible.find(bit);
-			if (it != bit_visible.end())
+			if (it != bit_visible.end()) {
 				c.visible.push_back(&it->second);
-			else
+				c.named.push_back(bit);
+			} else
 				c.unnamed.push_back(bit);
 		}
-	}
 
 	c.any = c.groups.empty() && c.visible.empty();
 	if (!c.any) {
 		c.domain = c.groups.empty() ? all_scopes : c.groups.front();
 		for (auto &g : c.groups)
 			c.domain = intersect(c.domain, g);
-		for (auto v : c.visible)
-			c.domain = intersect(c.domain, *v);
-		if (c.groups.empty() || c.groups.front().size() > 1)
-			c.evidence.insert("net");
+		// Keep the instances that need the fewest port crossings to see the named nets, see port_cost().
+		std::map<Scope *, int, ByPath> total;
+		for (auto s : c.domain) {
+			int sum = 0;
+			for (auto bit : c.named) {
+				int cost = port_cost(s, bit_named.at(bit));
+				if (cost < 0) {
+					sum = -1;
+					break;
+				}
+				sum += cost;
+			}
+			if (sum >= 0)
+				total[s] = sum;
+		}
+		int best = INT_MAX;
+		for (auto &kv : total)
+			best = std::min(best, kv.second);
+		c.domain.clear();
+		for (auto &kv : total)
+			if (kv.second == best)
+				c.domain.insert(kv.first);
 	}
 	return c;
+}
+
+// How many port crossings it takes for a net named in the given instances to be seen in 's': none in
+// an instance it is named in, one in the parent of such an instance, whose net the named port is, and
+// -1 if 's' cannot see the net.
+int HierRestoreWorker::port_cost(Scope *s, const ScopeSet &named)
+{
+	if (named.count(s))
+		return 0;
+	for (auto n : named)
+		if (n->parent == s)
+			return 1;
+	return -1;
 }
 
 // A wire without a reliable name is local to one instance, so cells sharing it lie in the same instance.
@@ -76,7 +100,7 @@ void HierRestoreWorker::propagate()
 			std::set<int> neighbours;
 			for (auto bit : c.unnamed)
 				for (int j : users.at(bit))
-					// merged neighbours span several instances and constrain nothing
+					// neighbours holding logic of several instances constrain nothing
 					if (j != i && !cells[j].any && !cells[j].domain.empty())
 						neighbours.insert(j);
 			std::map<Scope *, int, ByPath> votes;
@@ -97,51 +121,16 @@ void HierRestoreWorker::propagate()
 				updates.emplace_back(i, domain);
 		}
 		for (auto &u : updates) {
-			if (cells[u.first].any)
-				cells[u.first].from_neighbours = true;
 			cells[u.first].any = false;
 			cells[u.first].domain = u.second;
-			cells[u.first].evidence.insert("net");
 			changed = true;
 		}
 	}
 }
 
-// Instances of the same module whose equally named local wire this cell drives: synthesis kept one
-// copy of logic that existed in each of them.
-ScopeSet HierRestoreWorker::duplicates(const CellInfo &c)
+// Places the cell in the innermost instance containing all given ones; several of them are candidates.
+void HierRestoreWorker::set_result(CellInfo &c, const ScopeSet &scopes)
 {
-	ScopeSet out;
-	for (auto bit : c.outputs) {
-		auto it = bit_names.find(bit);
-		if (it == bit_names.end())
-			continue;
-		for (auto &a : it->second)
-			for (auto &b : it->second)
-				if (a.first != b.first && a.second == b.second && a.first->module == b.first->module &&
-				    c.domain.count(a.first) && c.domain.count(b.first))
-					out.insert(a.first);
-	}
-	return out;
-}
-
-// A cell known only through its neighbours, such as a constant driver, that is wired to cells placed in
-// each of its remaining instances: synthesis shared one cell between those instances.
-bool HierRestoreWorker::shared(const CellInfo &c)
-{
-	if (!c.from_neighbours)
-		return false;
-	ScopeSet seen;
-	for (auto bit : c.unnamed)
-		for (int j : users.at(bit))
-			if (!cells[j].any && cells[j].domain.size() == 1)
-				seen.insert(*cells[j].domain.begin());
-	return std::includes(seen.begin(), seen.end(), c.domain.begin(), c.domain.end(), ByPath());
-}
-
-void HierRestoreWorker::set_result(CellInfo &c, CellStatus status, const ScopeSet &scopes)
-{
-	c.status = status;
 	Path p = (*scopes.begin())->path;
 	for (auto s : scopes)
 		p = common_ancestor(p, s->path);
@@ -149,51 +138,11 @@ void HierRestoreWorker::set_result(CellInfo &c, CellStatus status, const ScopeSe
 	c.candidates.clear();
 	if (scopes.size() > 1)
 		c.candidates.assign(scopes.begin(), scopes.end());
+	c.status = scopes.size() > 1 ? CellStatus::Ambiguous : CellStatus::Unique;
 }
 
-// With -inside, merged and ambiguous cells are drawn in one of their candidates instead of the instance
-// containing all of them. Cells joined by wires without a reliable name lie in one instance, so each such
-// group with the same candidates makes one choice: the candidate most of their source locations point to,
-// else the innermost one, else the one most of their names point to, else the first by path.
-void HierRestoreWorker::place_inside()
-{
-	auto open = [](const CellInfo &c) { return c.status == CellStatus::Merged || c.status == CellStatus::Ambiguous; };
-	std::vector<bool> done(cells.size());
-	for (int i = 0; i < (int)cells.size(); i++) {
-		if (done[i] || !open(cells[i]))
-			continue;
-		const std::vector<Scope *> &cands = cells[i].candidates;
-		std::vector<int> group{i};
-		done[i] = true;
-		for (size_t g = 0; g < group.size(); g++)
-			for (auto bit : cells[group[g]].unnamed)
-				for (int j : users.at(bit))
-					if (!done[j] && open(cells[j]) && cells[j].candidates == cands) {
-						done[j] = true;
-						group.push_back(j);
-					}
-
-		std::map<Scope *, std::pair<int, int>, ByPath> votes; // by source location, by name
-		for (int m : group) {
-			const CellInfo &c = cells[m];
-			Scope *named = name_scope(c.name);
-			for (auto s : cands) {
-				if (std::any_of(c.groups.begin(), c.groups.end(), [&](const ScopeSet &g) { return g.count(s) > 0; }))
-					votes[s].first++;
-				votes[s].second += s == named;
-			}
-		}
-		auto rank = [&](Scope *s) { return std::make_tuple(votes[s].first, s->path.size(), votes[s].second); };
-		Scope *best = cands.front();
-		for (auto s : cands)
-			if (rank(s) > rank(best))
-				best = s;
-		for (int m : group)
-			cells[m].scope = best;
-	}
-}
-
-// No single instance fits: collect the instances the pieces of the cell come from.
+// No single instance fits, so synthesis merged logic of several: collect the instances the pieces of
+// the cell come from.
 void HierRestoreWorker::resolve_merged(CellInfo &c)
 {
 	auto sees = [](const ScopeSet *visible, const ScopeSet &scopes) {
@@ -241,7 +190,6 @@ void HierRestoreWorker::resolve_merged(CellInfo &c)
 					if (add == nullptr || s->path.size() > add->path.size())
 						add = s;
 			placed.insert(add);
-			c.evidence.insert("net");
 		}
 	}
 
@@ -253,41 +201,18 @@ void HierRestoreWorker::resolve_merged(CellInfo &c)
 		c.scope = root;
 		return;
 	}
-	set_result(c, open.empty() ? (all.size() > 1 ? CellStatus::Merged : CellStatus::Unique) : CellStatus::Ambiguous, all);
+	set_result(c, all);
 }
 
 void HierRestoreWorker::resolve(CellInfo &c)
 {
 	if (c.any) {
-		if (Scope *s = name_scope(c.name)) {
-			c.evidence.insert("name");
-			set_result(c, CellStatus::Inferred, {s});
-		} else {
-			c.status = CellStatus::Unknown;
-			c.scope = root;
-		}
-		return;
-	}
-	if (c.domain.empty()) {
+		c.status = CellStatus::Unknown;
+		c.scope = root;
+	} else if (c.domain.empty())
 		resolve_merged(c);
-		return;
-	}
-	if (c.domain.size() == 1) {
-		set_result(c, c.groups.empty() ? CellStatus::Inferred : CellStatus::Unique, c.domain);
-		return;
-	}
-	// The cell name is no tie-breaker here: it follows whichever connected wire synthesis picked.
-	ScopeSet dups = duplicates(c);
-	if (dups.size() > 1) {
-		c.evidence.insert("net");
-		set_result(c, CellStatus::Merged, dups);
-		return;
-	}
-	if (shared(c)) {
-		set_result(c, CellStatus::Merged, c.domain);
-		return;
-	}
-	set_result(c, CellStatus::Ambiguous, c.domain);
+	else
+		set_result(c, c.domain);
 }
 
 } // namespace hier_restore

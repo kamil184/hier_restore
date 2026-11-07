@@ -7,7 +7,6 @@ namespace hier_restore {
 void HierRestoreWorker::run()
 {
 	collect_scopes();
-	check_flattened_with_scopes();
 	collect_bits();
 
 	for (auto cell : top->cells()) {
@@ -26,13 +25,11 @@ void HierRestoreWorker::run()
 	propagate();
 	for (auto &c : cells)
 		resolve(c);
-	if (inside)
-		place_inside();
 
 	for (auto &c : cells) {
-		c.scope->own[c.status]++;
+		c.scope->cells++;
 		for (auto s : c.candidates)
-			s->mentions++;
+			s->candidate++;
 	}
 
 	for (auto &c : cells) {
@@ -41,18 +38,12 @@ void HierRestoreWorker::run()
 		c.cell->set_string_attribute(ID(hier_status), status_name(c.status));
 		c.cell->attributes.erase(ID(hier_candidates));
 		if (!c.candidates.empty()) {
-			// & joins the instances a merged cell belongs to all of, | those an ambiguous cell belongs to one of
-			const char *sep = c.status == CellStatus::Merged ? "&" : "|";
 			std::string s;
 			for (size_t i = 0; i < c.candidates.size(); i++)
-				s += (i ? sep : "") + path_str(c.candidates[i]->path);
+				s += (i ? "|" : "") + path_str(c.candidates[i]->path);
 			c.cell->set_string_attribute(ID(hier_candidates), s);
 		}
-		c.cell->set_string_attribute(ID(hier_evidence), join(c.evidence, ","));
 	}
-	for (auto &s : storage)
-		if (s->info != nullptr)
-			s->info->set_string_attribute(ID(hier_status), s->status(inside));
 
 	place_wires();
 }

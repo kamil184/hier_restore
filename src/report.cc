@@ -6,11 +6,9 @@ namespace hier_restore {
 
 void HierRestoreWorker::log_tree(Scope *s, int depth)
 {
-	log("  %*s%s  [%s]  %s", depth * 2, "", s == root ? "<top>" : s->flat_name.c_str(), s->module.c_str(), s->status(inside));
-	for (auto &kv : s->own)
-		log("  %s=%d", status_name(kv.first), kv.second);
-	if (s->mentions > 0)
-		log("  mentioned=%d", s->mentions);
+	log("  %*s%s  [%s]  cells=%d", depth * 2, "", s == root ? "<top>" : s->flat_name.c_str(), s->module.c_str(), s->cells);
+	if (s->candidate > 0)
+		log("  candidate=%d", s->candidate);
 	log("\n");
 	for (auto c : all_scopes)
 		if (c->parent == s)
@@ -40,13 +38,7 @@ void HierRestoreWorker::write_report(const std::string &filename)
 	bool first = true;
 	for (auto s : all_scopes) {
 		os << (first ? "\n" : ",\n") << "    {\"path\": " << json_path(s->path) << ", \"module\": " << json_str(s->module)
-		   << ", \"status\": " << json_str(s->status(inside)) << ", \"cells\": {";
-		bool first_count = true;
-		for (auto &kv : s->own) {
-			os << (first_count ? "" : ", ") << json_str(status_name(kv.first)) << ": " << kv.second;
-			first_count = false;
-		}
-		os << "}, \"mentions\": " << s->mentions << "}";
+		   << ", \"cells\": " << s->cells << ", \"candidate\": " << s->candidate << "}";
 		first = false;
 	}
 	os << "\n  ],\n  \"cells\": [";
@@ -56,12 +48,6 @@ void HierRestoreWorker::write_report(const std::string &filename)
 		   << ", \"status\": " << json_str(status_name(c.status)) << ", \"scope\": " << json_path(c.scope->path) << ", \"candidates\": [";
 		for (size_t i = 0; i < c.candidates.size(); i++)
 			os << (i ? ", " : "") << json_path(c.candidates[i]->path);
-		os << "], \"evidence\": [";
-		bool first_ev = true;
-		for (auto &e : c.evidence) {
-			os << (first_ev ? "" : ", ") << json_str(e);
-			first_ev = false;
-		}
 		os << "]}";
 		first = false;
 	}

@@ -12,8 +12,6 @@ Scope *HierRestoreWorker::add_scope(const Path &path, const std::string &flat_na
 	s->module_src = parse_src(module_src);
 	by_path[path] = s;
 	all_scopes.insert(s);
-	if (!flat_name.empty())
-		by_flat_name[flat_name] = s;
 	return s;
 }
 
@@ -34,6 +32,8 @@ void HierRestoreWorker::collect_scopes()
 		Scope *s = add_scope(path, flat_name, module, cell->get_string_attribute(ID(module_src)));
 		s->info = cell;
 	}
+	if (storage.size() == 1)
+		check_flattened_with_scopes();
 
 	for (auto &s : storage) {
 		if (s.get() == root)
@@ -79,11 +79,16 @@ void HierRestoreWorker::collect_bits()
 			if (bit.wire == nullptr)
 				continue;
 			bit_visible[bit].insert(s);
+			bit_named[bit].insert(s);
 			if (s->parent != nullptr)
 				bit_visible[bit].insert(s->parent);
-			bit_names[bit].emplace_back(s, local);
 		}
 	}
+	// A net named in one instance lies in it. One named in several instances runs through their ports
+	// and lies in an enclosing instance as well, which its names do not tell.
+	for (auto &kv : bit_named)
+		if (kv.second.size() > 1)
+			kv.second = bit_visible.at(kv.first);
 }
 
 // All instances of the innermost module definition that contains the given source range.
@@ -104,19 +109,6 @@ ScopeSet HierRestoreWorker::instances_at(const SrcRange &r)
 	return out;
 }
 
-// The scope whose flattened name is the longest prefix of the cell name. synth scripts name cells after
-// a connected wire, which may as well lie on the other side of an instance boundary, so this is weak.
-Scope *HierRestoreWorker::name_scope(const std::string &name)
-{
-	Scope *best = nullptr;
-	for (size_t pos = name.find(sep); pos != std::string::npos; pos = name.find(sep, pos + sep.size())) {
-		auto it = by_flat_name.find(name.substr(0, pos));
-		if (it != by_flat_name.end())
-			best = it->second;
-	}
-	return best;
-}
-
 Scope *HierRestoreWorker::scope_at(Path p)
 {
 	while (!by_path.count(p))
@@ -124,19 +116,20 @@ Scope *HierRestoreWorker::scope_at(Path p)
 	return by_path.at(p);
 }
 
-// Without $scopeinfo cells the instances are unknown, which only is fine if there never were any.
+// A design without $scopeinfo cells either had no instances or lost them. 'flatten -noscopeinfo' does not
+// create them, and synth_gatemate removes them again with its final 'opt_clean -purge'. Names that still
+// carry an instance path tell the second case apart.
 void HierRestoreWorker::check_flattened_with_scopes()
 {
-	if (storage.size() > 1)
-		return;
 	auto nested = [](RTLIL::AttrObject *obj) {
-		return obj->get_string_attribute(ID::hdlname).find(' ') != std::string::npos;
+		return obj->get_string_attribute(ID::hdlname).find(' ') != std::string::npos ||
+		       !obj->get_string_attribute(ID(scopename)).empty();
 	};
-	bool lost = std::any_of(top->wires().begin(), top->wires().end(), nested) ||
-		    std::any_of(top->cells().begin(), top->cells().end(), nested);
-	if (lost)
-		log_cmd_error("%s was flattened without $scopeinfo cells (flatten -noscopeinfo), its instances cannot be "
-			      "recovered.\n",
+	if (std::any_of(top->wires().begin(), top->wires().end(), nested) ||
+	    std::any_of(top->cells().begin(), top->cells().end(), nested))
+		log_cmd_error("%s has lost the $scopeinfo cells of its instances, which are needed to recover them. "
+			      "'flatten -noscopeinfo' does not create them, and synth_gatemate removes them in its last "
+			      "step; run it with '-run :vlog' to stop before that step.\n",
 			      log_id(top));
 }
 

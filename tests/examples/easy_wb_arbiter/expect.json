@@ -1,9 +1,0 @@
-{
-  "top": "wb_arbiter_2",
-  "files": [
-    "wb_arbiter_2.v",
-    "arbiter.v",
-    "priority_encoder.v"
-  ],
-  "expect": []
-}

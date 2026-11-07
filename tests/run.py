@@ -7,19 +7,18 @@ SOURCE.md) holds the design and an expect.json:
     {
       "top": "top",                      # top module, default "top"
       "files": ["design.v"],             # Verilog files in read order, default ["design.v"]
-      "flows": ["ice40", "generic"],     # flows to run, default all of FLOWS
-      "expect": [                        # each entry may be limited with "flows": [...] and "inside": true/false
-        {"scope": ["u_a", "u_b"], "status": ["complete"]},
-        {"status": "ambiguous", "max": 0},
-        {"status": "merged", "min": 1},
-        {"merged_with": [["u_a"], ["u_b"]]}
+      "flows": ["ice40"],              # flows to run, default all of FLOWS
+      "expect": [                        # each entry may be limited with "flows": [...]
+        {"scope": ["u_a", "u_b"], "cells": true, "candidate": false},  # cells placed there, candidate of none
+        {"status": "ambiguous", "max": 0},                            # number of cells with that status
+        {"candidates": [["u_a"], ["u_b"]]}                            # an ambiguous cell lists all of them
       ]
     }
 
 Independent of expect.json, every run is checked for these invariants:
   - every cell carries the hier_* attributes and they match the JSON report,
   - every wire carries hier_scope with a known instance,
-  - statuses are consistent with candidates and the placed scope (with --inside: one of the candidates),
+  - statuses are consistent with candidates and the placed scope, the scope counts with the cells,
   - the netlist is unchanged apart from the hier_* attributes,
   - a second run yields the identical report.
 """
@@ -41,13 +40,12 @@ PLUGIN = HERE.parent / "hier_restore.so"
 
 FLOWS = {
     "ice40": "synth_ice40 -top {top}",
-    "generic": "synth -flatten -top {top}",
-    "ecp5": "synth_ecp5 -top {top}",
-    "gowin": "synth_gowin -top {top}",
-    "xilinx": "synth_xilinx -flatten -top {top}",
+    # as OneWare runs it for GateMate boards, but without the final 'opt_clean -purge', which would remove
+    # the $scopeinfo cells; the NetlistViewer synthesizes the same way for its restored view
+    "gatemate": "synth_gatemate -top {top} -scopename -luttree -nomx8 -run :vlog",
 }
 
-CELL_STATUSES = {"unique", "inferred", "merged", "ambiguous", "unknown"}
+CELL_STATUSES = ("unique", "ambiguous", "unknown")
 
 
 def yosys(script, log):
@@ -58,16 +56,15 @@ def yosys(script, log):
         raise RuntimeError(f"yosys failed, see {log}:\n{proc.stderr[-2000:]}")
 
 
-def run_flow(case, flow, cfg, work, inside):
+def run_flow(case, flow, cfg, work):
     files = " ".join(f'"{case / f}"' for f in cfg.get("files", ["design.v"]))
     synth = FLOWS[flow].format(top=cfg.get("top", "top"))
     base, annotated, report = work / "base.json", work / "annotated.json", work / "report.json"
-    cmd = "hier_restore -inside" if inside else "hier_restore"
-    yosys(f"read_verilog {files}; {synth}; write_json {base}; {cmd} -o {report}; write_json {annotated}", work / "run.log")
+    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore -o {report}; write_json {annotated}", work / "run.log")
     # The write_json before the pass changes the order of cells and wires the pass sees, so the second run
     # also catches results that depend on the order of objects in the design.
     again, base_again = work / "report2.json", work / "base2.json"
-    yosys(f"read_verilog {files}; {synth}; {cmd} -o {again}; write_json {base_again}", work / "run2.log")
+    yosys(f"read_verilog {files}; {synth}; hier_restore -o {again}; write_json {base_again}", work / "run2.log")
     return base, annotated, report, again, base_again
 
 
@@ -107,7 +104,7 @@ def json_string(value):
     return value
 
 
-def check_invariants(base, annotated, report, again, annotated_again, inside):
+def check_invariants(base, annotated, report, again, annotated_again):
     errors, notes = [], []
     rep = json.loads(report.read_text())
 
@@ -126,8 +123,8 @@ def check_invariants(base, annotated, report, again, annotated_again, inside):
     for name, cell in top["cells"].items():
         attrs = cell.get("attributes", {})
         if cell["type"] == "$scopeinfo":
-            if "hier_status" not in attrs:
-                errors.append(f"$scopeinfo {name} has no hier_status")
+            if any(k.startswith("hier_") for k in attrs):
+                errors.append(f"$scopeinfo {name} got hier_* attributes")
             continue
         r = by_name.get(name)
         if r is None:
@@ -135,8 +132,7 @@ def check_invariants(base, annotated, report, again, annotated_again, inside):
             continue
         if attrs.get("hier_status") != r["status"] or json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
             errors.append(f"cell {name}: attributes do not match the report")
-        sep = "&" if r["status"] == "merged" else "|"
-        if json_string(attrs.get("hier_candidates", "")) != sep.join(path_str(p) for p in r["candidates"]):
+        if json_string(attrs.get("hier_candidates", "")) != "|".join(path_str(p) for p in r["candidates"]):
             errors.append(f"cell {name}: hier_candidates does not match the report")
     if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
         errors.append("report and netlist disagree on the number of cells")
@@ -154,42 +150,41 @@ def check_invariants(base, annotated, report, again, annotated_again, inside):
             errors.append(f"cell {c['name']}: unknown status {status}")
         if tuple(c["scope"]) not in scopes:
             errors.append(f"cell {c['name']}: placed in unknown scope {c['scope']}")
-        if status in ("merged", "ambiguous"):
-            placed_ok = c["scope"] in cands if inside else c["scope"] == common_ancestor(cands)
-            if len(cands) < 2 or not placed_ok:
-                where = "in one of them" if inside else "at their common ancestor"
-                errors.append(f"cell {c['name']}: {status} needs >= 2 candidates and placement {where}")
+        if status == "ambiguous":
+            if len(cands) < 2 or c["scope"] != common_ancestor(cands):
+                errors.append(f"cell {c['name']}: {status} needs >= 2 candidates and placement at their common ancestor")
         elif cands:
             errors.append(f"cell {c['name']}: {status} must not list candidates")
         if status == "unknown" and c["scope"]:
             errors.append(f"cell {c['name']}: unknown cells belong in the top module")
 
+    placed = Counter(tuple(c["scope"]) for c in rep["cells"])
+    listed = Counter(tuple(p) for c in rep["cells"] for p in c["candidates"])
     for s in rep["scopes"]:
-        placed = sum(s["cells"].values()) if inside else s["cells"].get("unique", 0) + s["cells"].get("inferred", 0)
-        mentioned = s["mentions"] > 0
-        want = ("partial" if mentioned else "complete") if placed else ("absorbed" if mentioned else "empty")
-        if s["status"] != want:
-            errors.append(f"scope {s['path']}: status {s['status']}, counts say {want}")
+        if s["cells"] != placed[tuple(s["path"])] or s["candidate"] != listed[tuple(s["path"])]:
+            errors.append(f"scope {s['path']}: counts do not match the cells")
     return rep, errors, notes
 
 
-def check_expectations(rep, expectations, flow, inside):
+def check_expectations(rep, expectations, flow):
     errors = []
     statuses = Counter(c["status"] for c in rep["cells"])
     scopes = {tuple(s["path"]): s for s in rep["scopes"]}
     for e in expectations:
-        if flow not in e.get("flows", [flow]) or e.get("inside", inside) != inside:
+        if flow not in e.get("flows", [flow]):
             continue
         if "scope" in e:
             s = scopes.get(tuple(e["scope"]))
             if s is None:
                 errors.append(f"scope {e['scope']} not found")
-            elif s["status"] not in e["status"]:
-                errors.append(f"scope {e['scope']} is {s['status']}, expected one of {e['status']}")
-        elif "merged_with" in e:
-            want = [list(p) for p in e["merged_with"]]
-            if not any(c["status"] == "merged" and all(p in c["candidates"] for p in want) for c in rep["cells"]):
-                errors.append(f"no merged cell lists all of {want}")
+            else:
+                for key in ("cells", "candidate"):
+                    if key in e and (s[key] > 0) != e[key]:
+                        errors.append(f"scope {e['scope']}: {key}={s[key]}, expected {'some' if e[key] else 'none'}")
+        elif "candidates" in e:
+            want = [list(p) for p in e["candidates"]]
+            if not any(all(p in c["candidates"] for p in want) for c in rep["cells"]):
+                errors.append(f"no ambiguous cell lists all of {want}")
         elif "status" in e:
             n = statuses.get(e["status"], 0)
             if n < e.get("min", 0) or n > e.get("max", n):
@@ -199,16 +194,15 @@ def check_expectations(rep, expectations, flow, inside):
 
 def summary(rep):
     counts = Counter(c["status"] for c in rep["cells"])
-    return " ".join(f"{s}={counts[s]}" for s in ("unique", "inferred", "merged", "ambiguous", "unknown") if counts[s])
+    return " ".join(f"{s}={counts[s]}" for s in CELL_STATUSES if counts[s])
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--case", action="append", help="run only these cases")
     ap.add_argument("--flow", action="append", choices=sorted(FLOWS), help="run only these flows")
-    ap.add_argument("--show", action="store_true", help="print the status of every scope")
+    ap.add_argument("--show", action="store_true", help="print the cell counts of every scope")
     ap.add_argument("--keep", action="store_true", help="keep the work directories")
-    ap.add_argument("--inside", action="store_true", help="run hier_restore -inside")
     args = ap.parse_args()
 
     if not PLUGIN.exists():
@@ -226,8 +220,8 @@ def main():
             work = root / case.name / flow
             work.mkdir(parents=True)
             try:
-                rep, errors, notes = check_invariants(*run_flow(case, flow, cfg, work, args.inside), args.inside)
-                errors += check_expectations(rep, cfg.get("expect", []), flow, args.inside)
+                rep, errors, notes = check_invariants(*run_flow(case, flow, cfg, work))
+                errors += check_expectations(rep, cfg.get("expect", []), flow)
             except Exception as ex:  # a broken run is reported like any other failure
                 rep, errors, notes = None, [str(ex)], []
             failures += bool(errors)
@@ -238,7 +232,7 @@ def main():
                 print(f"       note: {n}")
             if args.show and rep:
                 for s in rep["scopes"]:
-                    print(f"       {' '.join(s['path']) or '<top>':<40} {s['status']:<9} {s['cells']}")
+                    print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']} candidate={s['candidate']}")
     if args.keep or failures:
         print(f"\nwork directories: {root}")
     else:

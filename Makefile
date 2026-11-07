@@ -12,7 +12,6 @@ hier_restore.so: $(SRCS) $(wildcard src/*.h)
 
 test: hier_restore.so
 	python3 tests/run.py
-	python3 tests/run.py --inside
 
 clean:
 	rm -f $(PLUGINS) hier.json

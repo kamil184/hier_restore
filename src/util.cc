@@ -66,10 +66,6 @@ const char *status_name(CellStatus s)
 	switch (s) {
 	case CellStatus::Unique:
 		return "unique";
-	case CellStatus::Inferred:
-		return "inferred";
-	case CellStatus::Merged:
-		return "merged";
 	case CellStatus::Ambiguous:
 		return "ambiguous";
 	default:
@@ -104,14 +100,6 @@ std::string json_path(const Path &p)
 	for (size_t i = 0; i < p.size(); i++)
 		o += (i ? ", " : "") + json_str(p[i]);
 	return o + "]";
-}
-
-std::string join(const std::set<std::string> &items, const std::string &sep)
-{
-	std::string o;
-	for (auto &i : items)
-		o += (o.empty() ? "" : sep) + i;
-	return o;
 }
 
 } // namespace hier_restore

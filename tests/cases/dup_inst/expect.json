@@ -1,62 +1,9 @@
 {
   "top": "top",
   "expect": [
-    {
-      "scope": [
-        "u_p"
-      ],
-      "status": [
-        "absorbed"
-      ],
-      "inside": false
-    },
-    {
-      "scope": [
-        "u_p"
-      ],
-      "status": [
-        "absorbed",
-        "partial"
-      ],
-      "inside": true
-    },
-    {
-      "scope": [
-        "u_q"
-      ],
-      "status": [
-        "absorbed"
-      ],
-      "inside": false
-    },
-    {
-      "scope": [
-        "u_q"
-      ],
-      "status": [
-        "absorbed",
-        "partial"
-      ],
-      "inside": true
-    },
-    {
-      "merged_with": [
-        [
-          "u_p"
-        ],
-        [
-          "u_q"
-        ]
-      ]
-    },
-    {
-      "status": "unknown",
-      "max": 0
-    },
-    {
-      "status": "merged",
-      "min": 1,
-      "inside": true
-    }
+    {"scope": ["u_p"], "cells": false, "candidate": true},
+    {"scope": ["u_q"], "cells": false, "candidate": true},
+    {"candidates": [["u_p"], ["u_q"]]},
+    {"status": "unknown", "max": 0}
   ]
 }
