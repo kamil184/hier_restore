@@ -9,3 +9,6 @@ hier.json
 
 __pycache__/
 .DS_Store
+
+# logs of the NetlistReaderBackend when started from here
+*.log
