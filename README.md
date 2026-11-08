@@ -52,12 +52,11 @@ The top module is the empty string.
 |---|---|---|
 | `hier_scope` | every cell | instance the cell is placed in |
 | `hier_status` | every cell | `unique`, `ambiguous` or `unknown` |
-| `hier_candidates` | `ambiguous` cells | the instances the cell comes from, separated by `\|` |
 
 | `hier_status` | Meaning | `hier_scope` |
 |---|---|---|
 | `unique` | the cell comes from exactly one instance | that instance |
-| `ambiguous` | the cell comes from one or more of the candidates: synthesis merged their logic into it, or nothing tells them apart | innermost instance containing all candidates |
+| `ambiguous` | the cell comes from one or more of several instances: synthesis merged their logic into it, or nothing tells them apart | innermost instance containing all of them |
 | `unknown` | nothing tells where the cell comes from | top module |
 
 ### Wire attributes
@@ -69,17 +68,16 @@ Any other wire lies in the innermost instance that contains all cells connected 
 ### JSON report
 
 `-o <file>` writes the same result as JSON, sorted for stable diffs.
-For every instance it counts the cells placed in it and the ambiguous cells that list it as a candidate:
+For every instance it counts the cells placed in it:
 
 ```json
 {
   "top": "top",
   "scopes": [
-    {"path": ["u_alu", "u_add"], "module": "adder", "cells": 8, "candidate": 8}
+    {"path": ["u_alu", "u_add"], "module": "adder", "cells": 8}
   ],
   "cells": [
-    {"name": "y_SB_LUT4_O", "type": "SB_LUT4", "status": "ambiguous", "scope": ["u_alu"],
-     "candidates": [["u_alu"], ["u_alu", "u_add"]]}
+    {"name": "y_SB_LUT4_O", "type": "SB_LUT4", "status": "ambiguous", "scope": ["u_alu"]}
   ]
 }
 ```
@@ -97,7 +95,8 @@ For every instance it counts the cells placed in it and the ambiguous cells that
    Each cell keeps the alternatives most of its neighbours agree with, repeated until nothing changes.
    If all neighbours agree, this is the intersection of their alternatives; a neighbour behind a boundary wire that lost its name is outvoted instead of blocking the others.
 4. If exactly one instance remains, the cell is `unique`; if several remain, it is `ambiguous`.
-   If none remains, synthesis merged logic of several instances into the cell: the candidates are the instances its source locations point to, plus, for each named net none of them sees, the innermost instance that does.
+   If none remains, synthesis merged logic of several instances into the cell, and it is `ambiguous` among the instances its source locations point to, plus, for each named net none of them sees, the innermost instance that does.
+   An `ambiguous` cell is placed in the innermost instance containing all remaining ones.
 
 ## Accuracy
 

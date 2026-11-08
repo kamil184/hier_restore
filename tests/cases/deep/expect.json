@@ -1,10 +1,10 @@
 {
   "top": "top",
   "expect": [
-    {"scope": ["u_l1"], "cells": true, "candidate": false},
-    {"scope": ["u_l1", "u_l2"], "cells": true, "candidate": false},
-    {"scope": ["u_l1", "u_l2", "u_l3"], "cells": true, "candidate": false},
-    {"scope": ["u_l1", "u_l2", "u_l3", "u_leaf"], "cells": true, "candidate": false},
+    {"scope": ["u_l1"], "cells": true},
+    {"scope": ["u_l1", "u_l2"], "cells": true},
+    {"scope": ["u_l1", "u_l2", "u_l3"], "cells": true},
+    {"scope": ["u_l1", "u_l2", "u_l3", "u_leaf"], "cells": true},
     {"status": "ambiguous", "max": 0},
     {"status": "unknown", "max": 0}
   ]

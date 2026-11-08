@@ -29,7 +29,7 @@ struct SrcRange {
 	long size() const { return (long)(l2 - l1) * 100000 + (c2 == INT_MAX ? 99999 : c2 - c1); }
 };
 
-// unique: one instance; ambiguous: several candidates, from one or more of which the cell comes;
+// unique: one instance; ambiguous: one or more of several instances, which ones is unknown;
 // unknown: nothing tells where the cell comes from.
 enum class CellStatus { Unique, Ambiguous, Unknown };
 
@@ -40,8 +40,7 @@ struct Scope {
 	std::vector<SrcRange> module_src;
 	RTLIL::Cell *info = nullptr; // the $scopeinfo cell, null for the top module
 	Scope *parent = nullptr;
-	int cells = 0;     // cells placed here
-	int candidate = 0; // ambiguous cells listing this scope as a candidate
+	int cells = 0; // cells placed here
 };
 
 // Orders scopes by path so that every result is independent of memory layout.
@@ -68,7 +67,6 @@ struct CellInfo {
 
 	CellStatus status = CellStatus::Unknown;
 	Scope *scope = nullptr;
-	std::vector<Scope *> candidates; // set for ambiguous cells
 };
 
 bool is_within(const Path &inner, const Path &outer);

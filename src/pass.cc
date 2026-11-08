@@ -32,7 +32,6 @@ struct HierRestorePass : public Pass {
 		log("                                   contains all of them\n");
 		log("                        unknown    nothing tells where the cell comes from,\n");
 		log("                                   it is placed in the top module\n");
-		log("    hier_candidates   on ambiguous cells: the instance paths, separated by '|'\n");
 		log("    hier_scope        on every wire: the instance its name belongs to, or the\n");
 		log("                      innermost instance that contains all connected cells\n");
 		log("\n");

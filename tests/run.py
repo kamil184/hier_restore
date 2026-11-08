@@ -9,16 +9,15 @@ SOURCE.md) holds the design and an expect.json:
       "files": ["design.v"],             # Verilog files in read order, default ["design.v"]
       "flows": ["ice40"],              # flows to run, default all of FLOWS
       "expect": [                        # each entry may be limited with "flows": [...]
-        {"scope": ["u_a", "u_b"], "cells": true, "candidate": false},  # cells placed there, candidate of none
-        {"status": "ambiguous", "max": 0},                            # number of cells with that status
-        {"candidates": [["u_a"], ["u_b"]]}                            # an ambiguous cell lists all of them
+        {"scope": ["u_a", "u_b"], "cells": true},  # whether cells are placed there
+        {"status": "ambiguous", "max": 0}          # number of cells with that status ("min", "max")
       ]
     }
 
 Independent of expect.json, every run is checked for these invariants:
   - every cell carries the hier_* attributes and they match the JSON report,
   - every wire carries hier_scope with a known instance,
-  - statuses are consistent with candidates and the placed scope, the scope counts with the cells,
+  - statuses are known, unknown cells lie in the top module, the scope counts match the cells,
   - the netlist is unchanged apart from the hier_* attributes,
   - a second run yields the identical report.
 """
@@ -79,20 +78,6 @@ def strip_hier(netlist):
     return netlist
 
 
-def is_within(inner, outer):
-    return inner[: len(outer)] == outer
-
-
-def common_ancestor(paths):
-    out = paths[0]
-    for p in paths[1:]:
-        n = 0
-        while n < len(out) and n < len(p) and out[n] == p[n]:
-            n += 1
-        out = out[:n]
-    return out
-
-
 def path_str(p):
     return " ".join(p)
 
@@ -132,8 +117,6 @@ def check_invariants(base, annotated, report, again, annotated_again):
             continue
         if attrs.get("hier_status") != r["status"] or json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
             errors.append(f"cell {name}: attributes do not match the report")
-        if json_string(attrs.get("hier_candidates", "")) != "|".join(path_str(p) for p in r["candidates"]):
-            errors.append(f"cell {name}: hier_candidates does not match the report")
     if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
         errors.append("report and netlist disagree on the number of cells")
 
@@ -145,23 +128,17 @@ def check_invariants(base, annotated, report, again, annotated_again):
             errors.append(f"wire {name}: placed in unknown scope {scope!r}")
 
     for c in rep["cells"]:
-        status, cands = c["status"], c["candidates"]
+        status = c["status"]
         if status not in CELL_STATUSES:
             errors.append(f"cell {c['name']}: unknown status {status}")
         if tuple(c["scope"]) not in scopes:
             errors.append(f"cell {c['name']}: placed in unknown scope {c['scope']}")
-        if status == "ambiguous":
-            if len(cands) < 2 or c["scope"] != common_ancestor(cands):
-                errors.append(f"cell {c['name']}: {status} needs >= 2 candidates and placement at their common ancestor")
-        elif cands:
-            errors.append(f"cell {c['name']}: {status} must not list candidates")
         if status == "unknown" and c["scope"]:
             errors.append(f"cell {c['name']}: unknown cells belong in the top module")
 
     placed = Counter(tuple(c["scope"]) for c in rep["cells"])
-    listed = Counter(tuple(p) for c in rep["cells"] for p in c["candidates"])
     for s in rep["scopes"]:
-        if s["cells"] != placed[tuple(s["path"])] or s["candidate"] != listed[tuple(s["path"])]:
+        if s["cells"] != placed[tuple(s["path"])]:
             errors.append(f"scope {s['path']}: counts do not match the cells")
     return rep, errors, notes
 
@@ -177,14 +154,8 @@ def check_expectations(rep, expectations, flow):
             s = scopes.get(tuple(e["scope"]))
             if s is None:
                 errors.append(f"scope {e['scope']} not found")
-            else:
-                for key in ("cells", "candidate"):
-                    if key in e and (s[key] > 0) != e[key]:
-                        errors.append(f"scope {e['scope']}: {key}={s[key]}, expected {'some' if e[key] else 'none'}")
-        elif "candidates" in e:
-            want = [list(p) for p in e["candidates"]]
-            if not any(all(p in c["candidates"] for p in want) for c in rep["cells"]):
-                errors.append(f"no ambiguous cell lists all of {want}")
+            elif "cells" in e and (s["cells"] > 0) != e["cells"]:
+                errors.append(f"scope {e['scope']}: cells={s['cells']}, expected {'some' if e['cells'] else 'none'}")
         elif "status" in e:
             n = statuses.get(e["status"], 0)
             if n < e.get("min", 0) or n > e.get("max", n):
@@ -232,7 +203,7 @@ def main():
                 print(f"       note: {n}")
             if args.show and rep:
                 for s in rep["scopes"]:
-                    print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']} candidate={s['candidate']}")
+                    print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']}")
     if args.keep or failures:
         print(f"\nwork directories: {root}")
     else:

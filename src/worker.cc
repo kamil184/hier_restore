@@ -26,23 +26,13 @@ void HierRestoreWorker::run()
 	for (auto &c : cells)
 		resolve(c);
 
-	for (auto &c : cells) {
+	for (auto &c : cells)
 		c.scope->cells++;
-		for (auto s : c.candidates)
-			s->candidate++;
-	}
 
 	for (auto &c : cells) {
 		// set_string_attribute() drops empty values, but the top module's path is the empty string
 		c.cell->attributes[ID(hier_scope)] = RTLIL::Const(path_str(c.scope->path));
 		c.cell->set_string_attribute(ID(hier_status), status_name(c.status));
-		c.cell->attributes.erase(ID(hier_candidates));
-		if (!c.candidates.empty()) {
-			std::string s;
-			for (size_t i = 0; i < c.candidates.size(); i++)
-				s += (i ? "|" : "") + path_str(c.candidates[i]->path);
-			c.cell->set_string_attribute(ID(hier_candidates), s);
-		}
 	}
 
 	place_wires();

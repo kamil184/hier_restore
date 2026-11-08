@@ -128,16 +128,13 @@ void HierRestoreWorker::propagate()
 	}
 }
 
-// Places the cell in the innermost instance containing all given ones; several of them are candidates.
+// Places the cell in the innermost instance containing all given ones; with several, it is ambiguous.
 void HierRestoreWorker::set_result(CellInfo &c, const ScopeSet &scopes)
 {
 	Path p = (*scopes.begin())->path;
 	for (auto s : scopes)
 		p = common_ancestor(p, s->path);
 	c.scope = scope_at(p);
-	c.candidates.clear();
-	if (scopes.size() > 1)
-		c.candidates.assign(scopes.begin(), scopes.end());
 	c.status = scopes.size() > 1 ? CellStatus::Ambiguous : CellStatus::Unique;
 }
 

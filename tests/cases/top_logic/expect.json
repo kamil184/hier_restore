@@ -1,9 +1,9 @@
 {
   "top": "top",
   "expect": [
-    {"scope": [], "cells": true, "candidate": false},
-    {"scope": ["u_cnt"], "cells": true, "candidate": false},
-    {"scope": ["u_pass"], "cells": false, "candidate": false},
+    {"scope": [], "cells": true},
+    {"scope": ["u_cnt"], "cells": true},
+    {"scope": ["u_pass"], "cells": false},
     {"status": "ambiguous", "max": 0},
     {"status": "unknown", "max": 0}
   ]
