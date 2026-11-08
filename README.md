@@ -48,16 +48,7 @@ The top module is the empty string.
 
 ### Cell attributes
 
-| Attribute | Present on | Content |
-|---|---|---|
-| `hier_scope` | every cell | instance the cell is placed in |
-| `hier_status` | every cell | `unique`, `ambiguous` or `unknown` |
-
-| `hier_status` | Meaning | `hier_scope` |
-|---|---|---|
-| `unique` | the cell comes from exactly one instance | that instance |
-| `ambiguous` | the cell comes from one or more of several instances: synthesis merged their logic into it, or nothing tells them apart | innermost instance containing all of them |
-| `unknown` | nothing tells where the cell comes from | top module |
+Every cell gets a `hier_scope` with the instance it is placed in.
 
 ### Wire attributes
 
@@ -68,7 +59,13 @@ Any other wire lies in the innermost instance that contains all cells connected 
 ### JSON report
 
 `-o <file>` writes the same result as JSON, sorted for stable diffs.
-For every instance it counts the cells placed in it:
+For every instance it counts the cells placed in it, and every cell has a status:
+
+| Status | Meaning | Placed in |
+|---|---|---|
+| `unique` | the cell comes from exactly one instance | that instance |
+| `ambiguous` | the cell comes from one or more of several instances: synthesis merged their logic into it, or nothing tells them apart | innermost instance containing all of them |
+| `unknown` | nothing tells where the cell comes from | top module |
 
 ```json
 {
@@ -86,7 +83,6 @@ For every instance it counts the cells placed in it:
 
 1. The `src` attribute of a cell lists the source locations it was built from.
    Each location lies in a module definition, which gives the instances of that module as alternatives.
-   A cell that kept its name has an `hdlname`, which names its instance directly.
 2. Named wires tell in which instances a net is visible: in the instance the name belongs to and, for ports, in the instantiating one.
    A cell can only lie in an instance that sees all its named nets.
    Of those, it lies in the instances that need the fewest port crossings: none where a net is named, one in the parent of such an instance.

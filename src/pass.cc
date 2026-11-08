@@ -23,20 +23,18 @@ struct HierRestorePass : public Pass {
 		log("\n");
 		log("    hier_scope        on every cell: the instance path, written like 'hdlname'\n");
 		log("                      (instance names separated by spaces, empty for the top)\n");
-		log("    hier_status       on every cell, one of:\n");
-		log("                        unique     the cell comes from exactly one instance\n");
-		log("                        ambiguous  the cell comes from one or more of several\n");
-		log("                                   instances, because synthesis merged their\n");
-		log("                                   logic or because nothing tells them apart;\n");
-		log("                                   it is placed in the innermost instance that\n");
-		log("                                   contains all of them\n");
-		log("                        unknown    nothing tells where the cell comes from,\n");
-		log("                                   it is placed in the top module\n");
 		log("    hier_scope        on every wire: the instance its name belongs to, or the\n");
 		log("                      innermost instance that contains all connected cells\n");
 		log("\n");
 		log("    -o <file>\n");
-		log("        also write the result as a JSON report\n");
+		log("        also write the result as a JSON report, with the status of every cell:\n");
+		log("            unique     the cell comes from exactly one instance\n");
+		log("            ambiguous  the cell comes from one or more of several instances,\n");
+		log("                       because synthesis merged their logic or because\n");
+		log("                       nothing tells them apart; it is placed in the\n");
+		log("                       innermost instance that contains all of them\n");
+		log("            unknown    nothing tells where the cell comes from, it is placed\n");
+		log("                       in the top module\n");
 		log("\n");
 	}
 

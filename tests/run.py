@@ -115,7 +115,7 @@ def check_invariants(base, annotated, report, again, annotated_again):
         if r is None:
             errors.append(f"cell {name} missing from the report")
             continue
-        if attrs.get("hier_status") != r["status"] or json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
+        if json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
             errors.append(f"cell {name}: attributes do not match the report")
     if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
         errors.append("report and netlist disagree on the number of cells")

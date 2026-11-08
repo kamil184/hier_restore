@@ -29,11 +29,9 @@ void HierRestoreWorker::run()
 	for (auto &c : cells)
 		c.scope->cells++;
 
-	for (auto &c : cells) {
+	for (auto &c : cells)
 		// set_string_attribute() drops empty values, but the top module's path is the empty string
 		c.cell->attributes[ID(hier_scope)] = RTLIL::Const(path_str(c.scope->path));
-		c.cell->set_string_attribute(ID(hier_status), status_name(c.status));
-	}
 
 	place_wires();
 }

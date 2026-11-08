@@ -8,13 +8,6 @@ CellInfo HierRestoreWorker::describe(RTLIL::Cell *cell)
 	c.cell = cell;
 	c.name = RTLIL::unescape_id(cell->name);
 
-	std::string hdlname = cell->get_string_attribute(ID::hdlname);
-	if (!hdlname.empty()) {
-		Path p = split_tokens(hdlname, " ");
-		p.pop_back();
-		if (by_path.count(p))
-			c.groups.push_back({by_path.at(p)});
-	}
 	for (auto &r : parse_src(cell->get_string_attribute(ID::src))) {
 		ScopeSet alts = instances_at(r);
 		if (!alts.empty() && std::find(c.groups.begin(), c.groups.end(), alts) == c.groups.end())
@@ -151,21 +144,8 @@ void HierRestoreWorker::resolve_merged(CellInfo &c)
 	for (auto &g : c.groups)
 		if (g.size() == 1)
 			placed.insert(*g.begin());
-	for (auto &g : c.groups) {
-		if (g.size() == 1)
-			continue;
-		ScopeSet fits;
-		for (auto s : g) {
-			ScopeSet with = placed;
-			with.insert(s);
-			if (std::all_of(c.visible.begin(), c.visible.end(), [&](const ScopeSet *v) { return sees(v, with); }))
-				fits.insert(s);
-		}
-		if (fits.size() == 1)
-			placed.insert(*fits.begin());
 		else
-			open.push_back(fits.empty() ? g : fits);
-	}
+			open.push_back(g);
 
 	// Nets the placed instances cannot see belong to further instances the logic was merged from:
 	// prefer the innermost enclosing instance that sees the net, else the innermost one at all. Every
