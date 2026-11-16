@@ -16,15 +16,9 @@ The plugin is tied to the yosys version it was built against and must be rebuilt
 
 ## Source layout
 
-| File | Content |
-|---|---|
-| `src/types.h`, `src/util.cc` | paths, source locations, cell and instance records, JSON helpers |
-| `src/worker.h` | the state of one run and its steps |
-| `src/scopes.cc` | instances from `$scopeinfo` cells, and the instances each signal bit is visible in |
-| `src/cells.cc` | assigning cells to instances |
-| `src/worker.cc` | the order of the steps, writing the attributes, placing wires |
-| `src/report.cc` | log output and JSON report |
-| `src/pass.cc` | the `hier_restore` command, its help and options |
+The whole pass is one file, `src/hier_restore.cc`, to be read from top to bottom.
+Its first comment describes the algorithm.
+Then come small helpers, the algorithm itself in the order it runs, and at the end the registration of the `hier_restore` command in yosys.
 
 ## Requirements on the input
 

@@ -7,7 +7,7 @@ SRCS := $(wildcard src/*.cc)
 
 all: $(PLUGINS)
 
-hier_restore.so: $(SRCS) $(wildcard src/*.h)
+hier_restore.so: $(SRCS)
 	$(CXX) -shared -o $@ $(SRCS) $(YOSYS_FLAGS)
 
 test: hier_restore.so
