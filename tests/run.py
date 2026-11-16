@@ -9,18 +9,15 @@ SOURCE.md) holds the design and an expect.json:
       "files": ["design.v"],             # Verilog files in read order, default ["design.v"]
       "flows": ["ice40"],              # flows to run, default all of FLOWS
       "expect": [                        # each entry may be limited with "flows": [...]
-        {"scope": ["u_a", "u_b"], "cells": true},  # whether cells are placed there
-        {"status": "ambiguous", "max": 0}          # number of cells with that status ("min", "max")
+        {"scope": ["u_a", "u_b"], "cells": true}   # whether cells are placed there
       ]
     }
 
 Independent of expect.json, every run is checked for these invariants:
-  - every cell carries the hier_* attributes and they match the JSON report,
-  - every wire carries hier_scope with a known instance,
-  - statuses are known, unknown cells lie in the top module, the scope counts match the cells,
+  - every cell and every wire carries hier_scope with a known instance,
   - no cell is placed in an instance its output signal does not exist in, found by simulation (simcheck.py),
   - the netlist is unchanged apart from the hier_* attributes,
-  - a second run yields the identical report.
+  - a second run places every cell and wire the same way.
 """
 
 import argparse
@@ -31,7 +28,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -50,9 +46,6 @@ FLOWS = {
 # simulation models of the device cells, for the error check by simulation
 MODELS = {"ice40": "+/ice40/cells_sim.v", "gatemate": "+/gatemate/cells_sim.v"}
 
-CELL_STATUSES = ("unique", "ambiguous", "unknown")
-
-
 def yosys(script, log):
     exe = os.environ.get("YOSYS", "yosys")
     proc = subprocess.run([exe, "-q", "-m", str(PLUGIN), "-p", script], capture_output=True, text=True)
@@ -64,13 +57,12 @@ def yosys(script, log):
 def run_flow(case, flow, cfg, work):
     files = " ".join(f'"{case / f}"' for f in cfg.get("files", ["design.v"]))
     synth = FLOWS[flow].format(top=cfg.get("top", "top"))
-    base, annotated, report = work / "base.json", work / "annotated.json", work / "report.json"
-    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore -o {report}; write_json {annotated}", work / "run.log")
+    base, annotated, again = work / "base.json", work / "annotated.json", work / "annotated2.json"
+    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore; write_json {annotated}", work / "run.log")
     # The write_json before the pass changes the order of cells and wires the pass sees, so the second run
     # also catches results that depend on the order of objects in the design.
-    again, base_again = work / "report2.json", work / "base2.json"
-    yosys(f"read_verilog {files}; {synth}; hier_restore -o {again}; write_json {base_again}", work / "run2.log")
-    return base, annotated, report, again, base_again
+    yosys(f"read_verilog {files}; {synth}; hier_restore; write_json {again}", work / "run2.log")
+    return base, annotated, again
 
 
 def placement_errors(case, flow, cfg, work, base, annotated):
@@ -101,95 +93,90 @@ def json_string(value):
     return value
 
 
-def check_invariants(base, annotated, report, again, annotated_again):
+def instances(top):
+    """The paths of all instances, from the $scopeinfo cells; the top module is the empty path."""
+    paths = {()}
+    for name, cell in top["cells"].items():
+        if cell["type"] == "$scopeinfo" and cell.get("parameters", {}).get("TYPE") == "module":
+            hdlname = cell.get("attributes", {}).get("hdlname")
+            paths.add(tuple(hdlname.split()) if hdlname else (name,))
+    return paths
+
+
+def placement(top):
+    """{("cell" or "wire", name): instance path} from the hier_scope attributes."""
+    def scope(item):
+        value = json_string(item.get("attributes", {}).get("hier_scope"))
+        return None if value is None else tuple(value.split())
+
+    out = {("cell", name): scope(c) for name, c in top["cells"].items() if c["type"] != "$scopeinfo"}
+    out.update({("wire", name): scope(w) for name, w in top["netnames"].items()})
+    return out
+
+
+def check_invariants(base, annotated, again):
     errors, notes = [], []
-    rep = json.loads(report.read_text())
+    top = top_module(json.loads(annotated.read_text()))
+    placed = placement(top)
 
     # yosys itself names some cells after memory addresses ($display$0x...), which then differ between runs
-    if strip_hier(json.loads(annotated_again.read_text())) != json.loads(base.read_text()):
+    if strip_hier(json.loads(again.read_text())) != json.loads(base.read_text()):
         notes.append("synthesis is not deterministic for this design, reproducibility not checked")
-    elif report.read_text() != again.read_text():
-        errors.append("second run produced a different report")
+    elif placement(top_module(json.loads(again.read_text()))) != placed:
+        errors.append("second run placed cells or wires differently")
 
     if strip_hier(json.loads(annotated.read_text())) != json.loads(base.read_text()):
         errors.append("netlist differs from the one before hier_restore apart from hier_* attributes")
 
-    top = top_module(json.loads(annotated.read_text()))
-    by_name = {c["name"]: c for c in rep["cells"]}
-    scopes = {tuple(s["path"]) for s in rep["scopes"]}
     for name, cell in top["cells"].items():
-        attrs = cell.get("attributes", {})
-        if cell["type"] == "$scopeinfo":
-            if any(k.startswith("hier_") for k in attrs):
-                errors.append(f"$scopeinfo {name} got hier_* attributes")
-            continue
-        r = by_name.get(name)
-        if r is None:
-            errors.append(f"cell {name} missing from the report")
-            continue
-        if json_string(attrs.get("hier_scope")) != path_str(r["scope"]):
-            errors.append(f"cell {name}: attributes do not match the report")
-    if len(by_name) != sum(1 for c in top["cells"].values() if c["type"] != "$scopeinfo"):
-        errors.append("report and netlist disagree on the number of cells")
-
-    for name, net in top["netnames"].items():
-        scope = json_string(net.get("attributes", {}).get("hier_scope"))
+        if cell["type"] == "$scopeinfo" and any(k.startswith("hier_") for k in cell.get("attributes", {})):
+            errors.append(f"$scopeinfo {name} got hier_* attributes")
+    known = instances(top)
+    for (kind, name), scope in placed.items():
         if scope is None:
-            errors.append(f"wire {name} has no hier_scope")
-        elif tuple(scope.split()) not in scopes:
-            errors.append(f"wire {name}: placed in unknown scope {scope!r}")
-
-    for c in rep["cells"]:
-        status = c["status"]
-        if status not in CELL_STATUSES:
-            errors.append(f"cell {c['name']}: unknown status {status}")
-        if tuple(c["scope"]) not in scopes:
-            errors.append(f"cell {c['name']}: placed in unknown scope {c['scope']}")
-        if status == "unknown" and c["scope"]:
-            errors.append(f"cell {c['name']}: unknown cells belong in the top module")
-
-    placed = Counter(tuple(c["scope"]) for c in rep["cells"])
-    for s in rep["scopes"]:
-        if s["cells"] != placed[tuple(s["path"])]:
-            errors.append(f"scope {s['path']}: counts do not match the cells")
-    return rep, errors, notes
+            errors.append(f"{kind} {name} has no hier_scope")
+        elif scope not in known:
+            errors.append(f"{kind} {name}: placed in unknown instance {' '.join(scope)!r}")
+    return top, errors, notes
 
 
-def check_expectations(rep, expectations, flow):
+def cell_counts(top):
+    """{instance path: number of cells placed there}, for every instance."""
+    counts = {p: 0 for p in instances(top)}
+    for (kind, _), scope in placement(top).items():
+        if kind == "cell" and scope in counts:
+            counts[scope] += 1
+    return counts
+
+
+def check_expectations(counts, expectations, flow):
     errors = []
-    statuses = Counter(c["status"] for c in rep["cells"])
-    scopes = {tuple(s["path"]): s for s in rep["scopes"]}
     for e in expectations:
         if flow not in e.get("flows", [flow]):
             continue
-        if "scope" in e:
-            s = scopes.get(tuple(e["scope"]))
-            if s is None:
-                errors.append(f"scope {e['scope']} not found")
-            elif "cells" in e and (s["cells"] > 0) != e["cells"]:
-                errors.append(f"scope {e['scope']}: cells={s['cells']}, expected {'some' if e['cells'] else 'none'}")
-        elif "status" in e:
-            n = statuses.get(e["status"], 0)
-            if n < e.get("min", 0) or n > e.get("max", n):
-                errors.append(f"{n} {e['status']} cells, expected [{e.get('min', 0)}, {e.get('max', 'inf')}]")
+        n = counts.get(tuple(e["scope"]))
+        if n is None:
+            errors.append(f"scope {e['scope']} not found")
+        elif (n > 0) != e["cells"]:
+            errors.append(f"scope {e['scope']}: cells={n}, expected {'some' if e['cells'] else 'none'}")
     return errors
 
 
-def summary(rep):
-    counts = Counter(c["status"] for c in rep["cells"])
-    return " ".join(f"{s}={counts[s]}" for s in CELL_STATUSES if counts[s])
+def summary(counts):
+    return f"cells={sum(counts.values())} in_top={counts[()]}"
 
 
 def run_case(case, flow, cfg, work):
     work.mkdir(parents=True)
     try:
         outputs = run_flow(case, flow, cfg, work)
-        rep, errors, notes = check_invariants(*outputs)
+        top, errors, notes = check_invariants(*outputs)
         errors += placement_errors(case, flow, cfg, work, outputs[0], outputs[1])
-        errors += check_expectations(rep, cfg.get("expect", []), flow)
+        counts = cell_counts(top)
+        errors += check_expectations(counts, cfg.get("expect", []), flow)
     except Exception as ex:  # a broken run is reported like any other failure
-        rep, errors, notes = None, [str(ex)], []
-    return rep, errors, notes
+        counts, errors, notes = None, [str(ex)], []
+    return counts, errors, notes
 
 
 def main():
@@ -216,16 +203,16 @@ def main():
         results = list(pool.map(lambda job: run_case(*job, root / job[0].name / job[1]), jobs))
 
     failures = 0
-    for (case, flow, _), (rep, errors, notes) in zip(jobs, results):
+    for (case, flow, _), (counts, errors, notes) in zip(jobs, results):
         failures += bool(errors)
-        print(f"{'FAIL' if errors else 'ok  '} {case.name:<24} {flow:<8} {summary(rep) if rep else ''}")
+        print(f"{'FAIL' if errors else 'ok  '} {case.name:<24} {flow:<8} {summary(counts) if counts else ''}")
         for e in errors:
             print(f"       {e}")
         for n in notes:
             print(f"       note: {n}")
-        if args.show and rep:
-            for s in rep["scopes"]:
-                print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']}")
+        if args.show and counts:
+            for path, n in sorted(counts.items()):
+                print(f"       {' '.join(path) or '<top>':<40} cells={n}")
     if args.keep or failures:
         print(f"\nwork directories: {root}")
     else:

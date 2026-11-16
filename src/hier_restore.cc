@@ -27,7 +27,6 @@
 #include "kernel/yosys.h"
 
 #include <climits>
-#include <fstream>
 #include <map>
 #include <optional>
 #include <set>
@@ -111,28 +110,6 @@ static std::vector<SrcRange> parse_src(const std::string &src)
 	return out;
 }
 
-static std::string json_str(const std::string &s)
-{
-	std::string o = "\"";
-	for (unsigned char c : s) {
-		if (c == '"' || c == '\\')
-			o += std::string("\\") + (char)c;
-		else if (c < 0x20)
-			o += stringf("\\u%04x", c);
-		else
-			o += c;
-	}
-	return o + "\"";
-}
-
-static std::string json_path(const Path &p)
-{
-	std::string o = "[";
-	for (size_t i = 0; i < p.size(); i++)
-		o += (i ? ", " : "") + json_str(p[i]);
-	return o + "]";
-}
-
 // ---------------------------------------------------------------------------------------------------------
 // The algorithm
 // ---------------------------------------------------------------------------------------------------------
@@ -145,14 +122,9 @@ struct Instance {
 	int cells = 0;                     // cells placed here
 };
 
-// unique: one instance; ambiguous: one or more of several instances, which ones is unknown;
-// unknown: nothing tells where the cell comes from.
-enum class Status { Unique, Ambiguous, Unknown };
-
 struct PlacedCell {
 	RTLIL::Cell *cell;
 	Path place;
-	Status status;
 };
 
 struct HierRestore {
@@ -182,10 +154,6 @@ struct HierRestore {
 			}
 			cells.push_back(place_cell(cell));
 		}
-		// sorted only so that the report lists the cells in the same order on every run
-		std::sort(cells.begin(), cells.end(), [](const PlacedCell &x, const PlacedCell &y) {
-			return RTLIL::unescape_id(x.cell->name) < RTLIL::unescape_id(y.cell->name);
-		});
 
 		for (auto &c : cells) {
 			instances.at(c.place).cells++;
@@ -318,7 +286,7 @@ struct HierRestore {
 			for (auto &p : instances_at(r))
 				from_src.insert(p);
 		if (from_src.empty())
-			return {cell, {}, Status::Unknown};
+			return {cell, {}}; // nothing tells where the cell comes from: the top module
 
 		// Step 2: the source locations can be incomplete. A named net that none of these instances sees
 		// shows that the cell also holds logic of an instance that sees it, the deepest one counts as well.
@@ -345,7 +313,7 @@ struct HierRestore {
 		Path place = *found.begin();
 		for (auto &p : found)
 			place = common_ancestor(place, p);
-		return {cell, nearest_instance(place), found.size() > 1 ? Status::Ambiguous : Status::Unique};
+		return {cell, nearest_instance(place)};
 	}
 
 	// A wire whose name still tells its instance stays there. Any other wire lies in the innermost instance
@@ -373,13 +341,8 @@ struct HierRestore {
 	}
 
 	// -----------------------------------------------------------------------------------------------------
-	// Log and JSON report
+	// Log
 	// -----------------------------------------------------------------------------------------------------
-
-	static const char *status_name(Status s)
-	{
-		return s == Status::Unique ? "unique" : s == Status::Ambiguous ? "ambiguous" : "unknown";
-	}
 
 	void log_tree(const Path &path, int depth)
 	{
@@ -393,39 +356,8 @@ struct HierRestore {
 
 	void log_summary()
 	{
-		std::map<Status, int> total;
-		for (auto &c : cells)
-			total[c.status]++;
 		log("\nRecovered hierarchy of %s (%d cells):\n", log_id(top), (int)cells.size());
 		log_tree({}, 0);
-		log("\nCells by status:");
-		for (auto &kv : total)
-			log("  %s=%d", status_name(kv.first), kv.second);
-		log("\n");
-	}
-
-	void write_report(const std::string &filename)
-	{
-		std::ofstream os(filename);
-		if (!os)
-			log_cmd_error("Cannot open %s for writing.\n", filename.c_str());
-
-		os << "{\n  \"top\": " << json_str(log_id(top)) << ",\n  \"scopes\": [";
-		bool first = true;
-		for (auto &[path, inst] : instances) {
-			os << (first ? "\n" : ",\n") << "    {\"path\": " << json_path(path) << ", \"module\": " << json_str(inst.module)
-			   << ", \"cells\": " << inst.cells << "}";
-			first = false;
-		}
-		os << "\n  ],\n  \"cells\": [";
-		first = true;
-		for (auto &c : cells) {
-			os << (first ? "\n" : ",\n") << "    {\"name\": " << json_str(RTLIL::unescape_id(c.cell->name))
-			   << ", \"type\": " << json_str(RTLIL::unescape_id(c.cell->type)) << ", \"status\": " << json_str(status_name(c.status))
-			   << ", \"scope\": " << json_path(c.place) << "}";
-			first = false;
-		}
-		os << "\n  ]\n}\n";
 	}
 };
 
@@ -440,7 +372,7 @@ struct HierRestorePass : public Pass {
 	{
 		//   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
 		log("\n");
-		log("    hier_restore [options]\n");
+		log("    hier_restore\n");
 		log("\n");
 		log("Assigns every cell of the flattened top module to the module instance it came\n");
 		log("from. Run it after synthesis. The instances are taken from the $scopeinfo cells\n");
@@ -454,15 +386,9 @@ struct HierRestorePass : public Pass {
 		log("    hier_scope        on every wire: the instance its name belongs to, or the\n");
 		log("                      innermost instance that contains all connected cells\n");
 		log("\n");
-		log("    -o <file>\n");
-		log("        also write the result as a JSON report, with the status of every cell:\n");
-		log("            unique     the cell comes from exactly one instance\n");
-		log("            ambiguous  the cell comes from one or more of several instances,\n");
-		log("                       because synthesis merged their logic or because\n");
-		log("                       nothing tells them apart; it is placed in the\n");
-		log("                       innermost instance that contains all of them\n");
-		log("            unknown    nothing tells where the cell comes from, it is placed\n");
-		log("                       in the top module\n");
+		log("A cell is placed only as deep as the netlist proves. Where several instances\n");
+		log("are possible, it lies in the innermost instance containing all of them, and a\n");
+		log("cell without a source location in the design lies in the top module.\n");
 		log("\n");
 	}
 
@@ -470,17 +396,9 @@ struct HierRestorePass : public Pass {
 	{
 		log_header(design, "Executing HIER_RESTORE pass.\n");
 
-		std::string sep = design->scratchpad_get_string("flatten.separator", "."), outfile;
-		size_t argidx;
-		for (argidx = 1; argidx < args.size(); argidx++) {
-			if (args[argidx] == "-o" && argidx + 1 < args.size()) {
-				outfile = args[++argidx];
-				continue;
-			}
-			break;
-		}
-		extra_args(args, argidx, design);
+		extra_args(args, 1, design); // the pass has no options
 
+		std::string sep = design->scratchpad_get_string("flatten.separator", ".");
 		if (sep.empty())
 			log_cmd_error("The hierarchy separator must not be empty.\n");
 		RTLIL::Module *top = design->top_module();
@@ -490,8 +408,6 @@ struct HierRestorePass : public Pass {
 		HierRestore worker(top, sep);
 		worker.run();
 		worker.log_summary();
-		if (!outfile.empty())
-			worker.write_report(outfile);
 	}
 } HierRestorePass;
 

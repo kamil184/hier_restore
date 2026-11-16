@@ -3,7 +3,6 @@
   "expect": [
     {"scope": [], "cells": true},
     {"scope": ["u_cnt"], "cells": true},
-    {"scope": ["u_pass"], "cells": false},
-    {"status": "ambiguous", "max": 0}
+    {"scope": ["u_pass"], "cells": false}
   ]
 }

@@ -8,7 +8,7 @@ It never guesses: a cell is placed only as deep as the netlist proves, and where
 ```sh
 export PATH="$HOME/OneWareStudio/Packages/NativeTools/osscadsuite/oss-cad-suite/bin:$PATH"
 make
-yosys -m ./hier_restore.so -p "read_verilog design.v; synth_ice40 -top top; hier_restore -o hier.json; write_json netlist.json"
+yosys -m ./hier_restore.so -p "read_verilog design.v; synth_ice40 -top top; hier_restore; write_json netlist.json"
 ```
 
 `yosys-config --build` does not work with the OSS CAD Suite on macOS, so the Makefile takes only the flags from `yosys-config` and compiles with the local `clang++`.
@@ -50,29 +50,6 @@ Every wire gets a `hier_scope` with the instance it lies in.
 A wire whose name still tells its instance (`hdlname`, or a plain name in the top module) stays in that instance.
 Any other wire lies in the innermost instance that contains all cells connected to it, so that a viewer can route it to each of them.
 
-### JSON report
-
-`-o <file>` writes the same result as JSON, sorted for stable diffs.
-For every instance it counts the cells placed in it, and every cell has a status:
-
-| Status | Meaning | Placed in |
-|---|---|---|
-| `unique` | the cell comes from exactly one instance | that instance |
-| `ambiguous` | the cell comes from one or more of several instances: synthesis merged their logic into it, or nothing tells them apart | innermost instance containing all of them |
-| `unknown` | nothing tells where the cell comes from | top module |
-
-```json
-{
-  "top": "top",
-  "scopes": [
-    {"path": ["u_alu", "u_add"], "module": "adder", "cells": 8}
-  ],
-  "cells": [
-    {"name": "y_SB_LUT4_O", "type": "SB_LUT4", "status": "ambiguous", "scope": ["u_alu"]}
-  ]
-}
-```
-
 ## How cells are assigned
 
 1. The `src` attribute of a cell lists the source locations it was built from.
@@ -82,8 +59,7 @@ For every instance it counts the cells placed in it, and every cell has a status
    Named wires tell in which instances a net is visible: in the instance the name belongs to and, for ports, in the instantiating one.
    A named net that none of the instances from step 1 can see shows that the cell holds logic of a further instance, so the deepest instance that sees the net counts as well.
 3. The cell is placed in the innermost instance that contains all instances that count.
-   It is `unique` if that is a single instance and `ambiguous` otherwise.
-   A cell without a source location in the design is `unknown` and stays in the top module, since nothing proves where it comes from.
+   A cell without a source location in the design stays in the top module, since nothing proves where it comes from.
 
 The place can only become coarser by these rules, never be chosen among alternatives.
 Cells that synthesis created without a source location, such as most LUTs from ABC, therefore stay in the top module.
@@ -109,7 +85,7 @@ python3 tests/run.py --case demo --show     # one case, with the cell counts of 
 
 Each directory in `tests/cases` (hand-written designs) and `tests/examples` (open-source designs) holds a design and an `expect.json`; `tests/run.py` describes the format.
 Every case runs with `synth_ice40` and with `synth_gatemate -run :vlog`, the board of the course.
-Besides the expectations, every run checks with `tests/simcheck.py` that no cell is placed wrongly, that all cells are annotated consistently, that every wire is placed in a known instance, that the netlist is unchanged apart from the `hier_*` attributes and that a second run yields the identical report.
+Besides the expectations, every run checks with `tests/simcheck.py` that no cell is placed wrongly, that every cell and wire is placed in a known instance, that the netlist is unchanged apart from the `hier_*` attributes and that a second run places everything the same way.
 The second run sees the cells and wires in a different order, so it also catches results that depend on that order.
 
 The hand-written cases:

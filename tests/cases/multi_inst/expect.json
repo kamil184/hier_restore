@@ -4,6 +4,6 @@
     {"scope": ["u_a"], "cells": false},
     {"scope": ["u_b"], "cells": false},
     {"scope": ["u_c"], "cells": false},
-    {"status": "ambiguous", "min": 1}
+    {"scope": [], "cells": true}
   ]
 }

@@ -4,6 +4,6 @@
     {"scope": ["gen[0].u_stage"], "cells": false},
     {"scope": ["gen[1].u_stage"], "cells": false},
     {"scope": ["gen[2].u_stage"], "cells": false},
-    {"status": "ambiguous", "min": 1}
+    {"scope": [], "cells": true}
   ]
 }

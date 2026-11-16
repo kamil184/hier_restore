@@ -14,6 +14,6 @@ test: hier_restore.so
 	python3 tests/run.py
 
 clean:
-	rm -f $(PLUGINS) hier.json
+	rm -f $(PLUGINS)
 
 .PHONY: all test clean
