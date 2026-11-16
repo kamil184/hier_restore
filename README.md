@@ -1,6 +1,6 @@
 # hier_restore
 
-A yosys pass that runs after synthesis and assigns every cell of the flattened netlist to the module instance it came from.
+A yosys pass that runs after synthesis, assigns every cell of the flattened netlist to the module instance it came from and rebuilds the modules of the instances.
 It never guesses: a cell is placed only as deep as the netlist proves, and where that is not enough, it stays in an enclosing instance or in the top module.
 
 ## Build and run
@@ -34,21 +34,25 @@ The hierarchy separator is the one `flatten` used, taken from the `flatten.separ
 
 ## Output format
 
-The netlist itself is not changed; the pass only adds attributes, which `write_json` and `write_rtlil` carry along.
+The pass turns the flattened netlist into a hierarchical one again; the logic itself is not changed.
+`write_json` writes it like any other hierarchical netlist, so viewers such as the NetlistReaderBackend draw it without changes.
 
+Every instance becomes a module of its own, named `<module>$<instance>`, for example `adder$u_alu.u_add`, with the `hdlname` of the original module.
+It holds the cells placed in the instance, named without the instance path, and a cell for each of its child instances.
+The top module keeps its name and ports.
+
+A signal that is driven outside an instance and read inside becomes an input port of its module, one driven inside and read outside an output port.
+A port is named after a net of its signals, preferring the nets of the instance itself, then visible names, names from the source text and wider nets.
+Every module gets the nets of its instance that it uses, and for signals still without a net, a net of another instance that carries them.
+The `$scopeinfo` cells are dropped, the hierarchy itself now holds what they described.
+
+Every cell keeps the instance it was placed in as attribute `hier_scope`, so that it stays known after a `flatten`.
 Instance paths follow the convention of the `hdlname` attribute: instance names from the top down, separated by spaces.
 The top module is the empty string.
 `write_json` appends a blank to strings of the form `/[01xz]* */`, so the top module appears as `" "` there and readers have to strip that blank.
 
-### Cell attributes
-
-Every cell gets a `hier_scope` with the instance it is placed in.
-
-### Wire attributes
-
-Every wire gets a `hier_scope` with the instance it lies in.
-A wire whose name still tells its instance (`hdlname`, or a plain name in the top module) stays in that instance.
-Any other wire lies in the innermost instance that contains all cells connected to it, so that a viewer can route it to each of them.
+A wire whose name still tells its instance (`hdlname`, or a plain name in the top module) lies in that instance.
+Any other wire lies in the innermost instance that contains all cells connected to it.
 
 ## How cells are assigned
 
@@ -85,7 +89,8 @@ python3 tests/run.py --case demo --show     # one case, with the cell counts of 
 
 Each directory in `tests/cases` (hand-written designs) and `tests/examples` (open-source designs) holds a design and an `expect.json`; `tests/run.py` describes the format.
 Every case runs with `synth_ice40` and with `synth_gatemate -run :vlog`, the board of the course.
-Besides the expectations, every run checks with `tests/simcheck.py` that no cell is placed wrongly, that every cell and wire is placed in a known instance, that the netlist is unchanged apart from the `hier_*` attributes and that a second run places everything the same way.
+Besides the expectations, every run checks that every instance became a module holding the cells placed in it, and that a second run places every cell the same way.
+The restored netlist is flattened again for the other checks: it must have the same cells as before and, simulated with `tests/simcheck.py`, compute the same outputs, and no cell may be placed wrongly.
 The second run sees the cells and wires in a different order, so it also catches results that depend on that order.
 
 The hand-written cases:

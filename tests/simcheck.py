@@ -127,6 +127,26 @@ def _inverse(sig):
     return sig.translate(str.maketrans("01", "10"))
 
 
+def _simulate(work, netlist, top, models, name):
+    """Simulates a synthesized netlist with the testbench tb.v into <name>.vcd."""
+    # write_json adds the blackbox definitions of the device cells; they must give way to the models,
+    # which are only elaborated where used (-defer), since some take long, such as block RAM
+    _yosys(f"read_json {netlist}; delete t:$scopeinfo; delete =A:blackbox; rename {top} DUT; "
+           f"read_verilog -defer -noblackbox {models}; read_verilog {work / 'tb.v'}; hierarchy -top tb; proc; flatten; "
+           f"tribuf -logic; sim -clock clk -zinit -a -n {CYCLES} -vcd {work / (name + '.vcd')} tb", work / f"sim_{name}.log")
+
+
+def same_outputs(work, top, models, before, after):
+    """Whether two synthesized netlists of the design give the same outputs for the same inputs. Outputs that
+    toggle too rarely are compared as well, but only by whether they are left out in both."""
+    ports = _top(json.loads(before.read_text()))["ports"]
+    _testbench(ports, work / "tb.v")
+    _simulate(work, before, top, models, "before")
+    _simulate(work, after, top, models, "after")
+    outputs = set(re.findall(r"out_\d+", (work / "tb.v").read_text()))
+    return _signatures(work / "before.vcd", outputs) == _signatures(work / "after.vcd", outputs)
+
+
 def find_errors(work, files, top, models, netlist, annotated):
     """Returns the cells of 'annotated' (the netlist after hier_restore) placed in an instance their output
     signal does not exist in, as (cell, instance, port, instances of the signal)."""
@@ -135,11 +155,7 @@ def find_errors(work, files, top, models, netlist, annotated):
     _yosys(f"read_verilog {read}; hierarchy -top {top}; proc; memory -nomap; flatten; write_json {work / 'rtl.json'}; "
            f"rename {top} DUT; read_verilog {work / 'tb.v'}; hierarchy -top tb; proc; flatten; memory_nordff; "
            f"sim -clock clk -zinit -n {CYCLES} -vcd {work / 'rtl.vcd'} tb", work / "sim_rtl.log")
-    # write_json adds the blackbox definitions of the device cells; they must give way to the models,
-    # which are only elaborated where used (-defer), since some take long, such as block RAM
-    _yosys(f"read_json {netlist}; delete t:$scopeinfo; delete =A:blackbox; rename {top} DUT; "
-           f"read_verilog -defer -noblackbox {models}; read_verilog {work / 'tb.v'}; hierarchy -top tb; proc; flatten; "
-           f"tribuf -logic; sim -clock clk -zinit -a -n {CYCLES} -vcd {work / 'net.vcd'} tb", work / "sim_net.log")
+    _simulate(work, netlist, top, models, "net")
 
     # the instances every RTL signal exists in, from the hdlname of its wires
     instance = {}

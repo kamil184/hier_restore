@@ -14,14 +14,15 @@ SOURCE.md) holds the design and an expect.json:
     }
 
 Independent of expect.json, every run is checked for these invariants:
-  - every cell and every wire carries hier_scope with a known instance,
+  - every instance became a module, and every cell lies in the module of the instance in its hier_scope,
+  - flattened again, the netlist has the same cells and computes the same outputs as before (simcheck.py),
   - no cell is placed in an instance its output signal does not exist in, found by simulation (simcheck.py),
-  - the netlist is unchanged apart from the hier_* attributes,
-  - a second run places every cell and wire the same way.
+  - a second run places every cell the same way.
 """
 
 import argparse
 import json
+from collections import Counter
 import os
 import re
 import shutil
@@ -55,31 +56,31 @@ def yosys(script, log):
 
 
 def run_flow(case, flow, cfg, work):
+    """Writes the netlist before the pass, after it, and after it flattened again; the cells keep the instance
+    they were placed in as hier_scope through 'flatten'."""
     files = " ".join(f'"{case / f}"' for f in cfg.get("files", ["design.v"]))
     synth = FLOWS[flow].format(top=cfg.get("top", "top"))
-    base, annotated, again = work / "base.json", work / "annotated.json", work / "annotated2.json"
-    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore; write_json {annotated}", work / "run.log")
+    base, restored, flat, again = (work / f for f in ("base.json", "restored.json", "flat.json", "flat2.json"))
+    yosys(f"read_verilog {files}; {synth}; write_json {base}; hier_restore; check -assert; write_json {restored}; "
+          f"flatten; write_json {flat}", work / "run.log")
     # The write_json before the pass changes the order of cells and wires the pass sees, so the second run
     # also catches results that depend on the order of objects in the design.
-    yosys(f"read_verilog {files}; {synth}; hier_restore; write_json {again}", work / "run2.log")
-    return base, annotated, again
+    yosys(f"read_verilog {files}; {synth}; hier_restore; flatten; write_json {again}", work / "run2.log")
+    return base, restored, flat, again
 
 
-def placement_errors(case, flow, cfg, work, base, annotated):
+def simulation_errors(case, flow, cfg, work, base, flat):
     files = [case / f for f in cfg.get("files", ["design.v"])]
-    errors = simcheck.find_errors(work, files, cfg.get("top", "top"), MODELS[flow], base, annotated)
-    return [f"cell {c} placed in {s}, but its output {p} exists only in {', '.join(w)}" for c, s, p, w in errors]
+    top, models = cfg.get("top", "top"), MODELS[flow]
+    errors = simcheck.find_errors(work, files, top, models, flat, flat)
+    errors = [f"cell {c} placed in {s}, but its output {p} exists only in {', '.join(w)}" for c, s, p, w in errors]
+    if not simcheck.same_outputs(work, top, models, base, flat):
+        errors.append("the restored netlist computes other outputs than the one before hier_restore")
+    return errors
 
 
 def top_module(netlist):
     return next(m for m in netlist["modules"].values() if m.get("attributes", {}).get("top"))
-
-
-def strip_hier(netlist):
-    for module in netlist["modules"].values():
-        for item in [*module.get("cells", {}).values(), *module.get("netnames", {}).values()]:
-            item["attributes"] = {k: v for k, v in item.get("attributes", {}).items() if not k.startswith("hier_")}
-    return netlist
 
 
 def path_str(p):
@@ -104,47 +105,60 @@ def instances(top):
 
 
 def placement(top):
-    """{("cell" or "wire", name): instance path} from the hier_scope attributes."""
-    def scope(item):
-        value = json_string(item.get("attributes", {}).get("hier_scope"))
-        return None if value is None else tuple(value.split())
-
-    out = {("cell", name): scope(c) for name, c in top["cells"].items() if c["type"] != "$scopeinfo"}
-    out.update({("wire", name): scope(w) for name, w in top["netnames"].items()})
-    return out
+    """{cell name: instance path} from the hier_scope attributes of the netlist flattened again."""
+    return {name: tuple((json_string(c.get("attributes", {}).get("hier_scope")) or "").split())
+            for name, c in top["cells"].items() if c["type"] != "$scopeinfo"}
 
 
-def check_invariants(base, annotated, again):
+def cell_types(top):
+    return Counter(c["type"] for c in top["cells"].values() if c["type"] != "$scopeinfo")
+
+
+def module_errors(restored, known):
+    """Walks the instance tree of the restored netlist: every instance must be a module, and every cell of a
+    module must carry the instance of the module as hier_scope."""
+    modules = restored["modules"]
+    errors, found = [], set()
+
+    def walk(module, path):
+        found.add(path)
+        for name, cell in module["cells"].items():
+            child = modules.get(cell["type"])
+            if child is not None and not child.get("attributes", {}).get("blackbox"):
+                walk(child, path + (name,))
+            elif placement({"cells": {name: cell}})[name] != path:
+                errors.append(f"cell {name} lies in {' '.join(path) or '<top>'}, but its hier_scope says otherwise")
+
+    walk(top_module(restored), ())
+    errors += [f"instance {' '.join(p)} is not a module" for p in sorted(known - found)]
+    errors += [f"module of unknown instance {' '.join(p)}" for p in sorted(found - known)]
+    return errors
+
+
+def check_invariants(base, restored, flat, again):
     errors, notes = [], []
-    top = top_module(json.loads(annotated.read_text()))
-    placed = placement(top)
+    base_top, flat_top = top_module(json.loads(base.read_text())), top_module(json.loads(flat.read_text()))
+    placed = placement(flat_top)
+    known = instances(base_top)
 
     # yosys itself names some cells after memory addresses ($display$0x...), which then differ between runs
-    if strip_hier(json.loads(again.read_text())) != json.loads(base.read_text()):
+    again_placed = placement(top_module(json.loads(again.read_text())))
+    if set(again_placed) != set(placed):
         notes.append("synthesis is not deterministic for this design, reproducibility not checked")
-    elif placement(top_module(json.loads(again.read_text()))) != placed:
-        errors.append("second run placed cells or wires differently")
+    elif again_placed != placed:
+        errors.append("second run placed cells differently")
 
-    if strip_hier(json.loads(annotated.read_text())) != json.loads(base.read_text()):
-        errors.append("netlist differs from the one before hier_restore apart from hier_* attributes")
-
-    for name, cell in top["cells"].items():
-        if cell["type"] == "$scopeinfo" and any(k.startswith("hier_") for k in cell.get("attributes", {})):
-            errors.append(f"$scopeinfo {name} got hier_* attributes")
-    known = instances(top)
-    for (kind, name), scope in placed.items():
-        if scope is None:
-            errors.append(f"{kind} {name} has no hier_scope")
-        elif scope not in known:
-            errors.append(f"{kind} {name}: placed in unknown instance {' '.join(scope)!r}")
-    return top, errors, notes
+    if cell_types(flat_top) != cell_types(base_top):
+        errors.append("the restored netlist has other cells than the one before hier_restore")
+    errors += module_errors(json.loads(restored.read_text()), known)
+    return placed, known, errors, notes
 
 
-def cell_counts(top):
+def cell_counts(placed, known):
     """{instance path: number of cells placed there}, for every instance."""
-    counts = {p: 0 for p in instances(top)}
-    for (kind, _), scope in placement(top).items():
-        if kind == "cell" and scope in counts:
+    counts = {p: 0 for p in known}
+    for scope in placed.values():
+        if scope in counts:
             counts[scope] += 1
     return counts
 
@@ -169,10 +183,10 @@ def summary(counts):
 def run_case(case, flow, cfg, work):
     work.mkdir(parents=True)
     try:
-        outputs = run_flow(case, flow, cfg, work)
-        top, errors, notes = check_invariants(*outputs)
-        errors += placement_errors(case, flow, cfg, work, outputs[0], outputs[1])
-        counts = cell_counts(top)
+        base, restored, flat, again = run_flow(case, flow, cfg, work)
+        placed, known, errors, notes = check_invariants(base, restored, flat, again)
+        errors += simulation_errors(case, flow, cfg, work, base, flat)
+        counts = cell_counts(placed, known)
         errors += check_expectations(counts, cfg.get("expect", []), flow)
     except Exception as ex:  # a broken run is reported like any other failure
         counts, errors, notes = None, [str(ex)], []

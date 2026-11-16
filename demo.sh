@@ -19,7 +19,7 @@ echo "top  ($N ячеек: SB_LUT4, SB_DFFSR, SB_CARRY, ... без вложен�
 
 echo
 echo "=== После hier_restore: иерархия восстановлена ==="
-yosys -m ./hier_restore.so -p "read_verilog tests/cases/demo/design.v; $SYNTH; hier_restore -o hier.json" 2>&1 \
-  | sed -n '/Recovered hierarchy/,/^End of script/p' | grep -v '^End of\|^$\|Recovered'
+yosys -m ./hier_restore.so -p "read_verilog tests/cases/demo/design.v; $SYNTH; hier_restore; write_json hier.json" 2>&1 \
+  | sed -n '/Recovered hierarchy/,/^$/p' | grep -v '^$\|Recovered'
 echo
 echo "JSON: $(pwd)/hier.json"
