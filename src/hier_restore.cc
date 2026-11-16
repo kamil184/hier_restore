@@ -590,19 +590,15 @@ struct HierRestore {
 			m->set_string_attribute(ID::hdlname, inst.module.empty() ? path.back() : inst.module);
 		}
 
-		// The cells of the instance and of its child instances, named without the instance path
-		std::set<std::string> cell_names;
-		std::vector<std::pair<std::string, RTLIL::Cell *>> own_cells;
-		for (auto &c : cells) {
-			if (c.place != path)
-				continue;
-			std::string name = local_name(RTLIL::unescape_id(c.cell->name), path);
-			own_cells.push_back({unique_name(cell_names, name), c.cell});
-		}
-		std::vector<std::pair<std::string, Instance *>> children;
+		// The cells of the instance and its child instances
+		std::vector<RTLIL::Cell *> own_cells;
+		for (auto &c : cells)
+			if (c.place == path)
+				own_cells.push_back(c.cell);
+		std::vector<std::pair<Path, Instance *>> children;
 		for (auto &[child_path, child] : instances)
 			if (!child_path.empty() && child.parent == path)
-				children.push_back({unique_name(cell_names, child_path.back()), &child});
+				children.push_back({child_path, &child});
 
 		// The ports of the top module stay as they are
 		std::vector<NewWire> ports = inst.ports;
@@ -630,22 +626,23 @@ struct HierRestore {
 		};
 		for (auto &port : ports)
 			use(port.bits);
-		for (auto &[name, cell] : own_cells)
+		for (auto cell : own_cells)
 			for (auto &conn : cell->connections())
 				use(sigmap(conn.second).bits());
-		for (auto &[name, child] : children)
+		for (auto &[child_path, child] : children)
 			for (auto &port : child->ports)
 				use(port.bits);
 
 		// The nets of the module: every port is a net of its own; then follow the nets of the instance, and
-		// for signals still without a net, the nets of other instances
+		// for signals still without a net, the nets of other instances. Wires and cells of a module must not
+		// share a name, so all names come from one set, the ports first, as the parent uses their names.
 		std::vector<NewWire> nets = ports;
-		std::set<std::string> net_names;
+		std::set<std::string> names;
 		std::map<std::string, size_t> net_index;
 		pool<RTLIL::SigBit> uncovered = is_used;
 		auto add_net = [&](const std::string &name, const std::vector<RTLIL::SigBit> &bits, const std::string &src) {
 			NewWire net;
-			net.name = unique_name(net_names, name);
+			net.name = unique_name(names, name);
 			net.bits = bits;
 			net.src = src;
 			net_index[net.name] = nets.size();
@@ -654,7 +651,7 @@ struct HierRestore {
 				uncovered.erase(bit);
 		};
 		for (size_t i = 0; i < ports.size(); i++) {
-			net_names.insert(ports[i].name);
+			names.insert(ports[i].name);
 			net_index[ports[i].name] = i;
 			for (auto bit : ports[i].bits)
 				uncovered.erase(bit);
@@ -720,15 +717,16 @@ struct HierRestore {
 			return out;
 		};
 
-		// Copy the cells, and keep the instance each one was placed in
-		for (auto &[name, cell] : own_cells) {
+		// Copy the cells, named without the instance path, and keep the instance each one was placed in
+		for (auto cell : own_cells) {
+			std::string name = unique_name(names, local_name(RTLIL::unescape_id(cell->name), path));
 			RTLIL::Cell *copy = m->addCell(new_id(name), cell);
 			for (auto &conn : cell->connections())
 				copy->setPort(conn.first, in_module(conn.second));
 			copy->attributes[ID(hier_scope)] = RTLIL::Const(path_str(path));
 		}
-		for (auto &[name, child] : children) {
-			RTLIL::Cell *cell = m->addCell(new_id(name), child->new_module);
+		for (auto &[child_path, child] : children) {
+			RTLIL::Cell *cell = m->addCell(new_id(unique_name(names, child_path.back())), child->new_module);
 			cell->attributes[ID(module_not_derived)] = RTLIL::Const(1);
 			if (!child->cell_src.empty())
 				cell->set_src_attribute(child->cell_src);
