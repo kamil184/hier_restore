@@ -2,8 +2,9 @@
   "top": "top",
   "expect": [
     {"scope": ["u_cnt"], "cells": true},
+    {"scope": ["u_alu", "u_add"], "cells": true},
     {"scope": ["u_alu", "u_logic"], "cells": false},
-    {"status": "unknown", "max": 0},
+    {"scope": ["u_alu"], "cells": true, "flows": ["ice40"]},
     {"status": "ambiguous", "min": 1, "flows": ["ice40"]}
   ]
 }

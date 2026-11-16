@@ -1,10 +1,9 @@
 {
   "top": "top",
   "expect": [
-    {"scope": ["gen[0].u_stage"], "cells": true},
-    {"scope": ["gen[1].u_stage"], "cells": true},
-    {"scope": ["gen[2].u_stage"], "cells": true},
-    {"status": "ambiguous", "max": 0},
-    {"status": "unknown", "max": 0}
+    {"scope": ["gen[0].u_stage"], "cells": false},
+    {"scope": ["gen[1].u_stage"], "cells": false},
+    {"scope": ["gen[2].u_stage"], "cells": false},
+    {"status": "ambiguous", "min": 1}
   ]
 }

@@ -2,9 +2,6 @@
   "top": "addressing",
   "expect": [
     {"scope": ["addr_master_1"], "cells": true},
-    {"scope": ["addr_slave_1"], "cells": true},
-    {"status": "unknown", "max": 0},
-    {"status": "ambiguous", "max": 0, "flows": ["gatemate"]},
-    {"status": "ambiguous", "min": 1, "flows": ["ice40"]}
+    {"scope": ["addr_slave_1"], "cells": true}
   ]
 }

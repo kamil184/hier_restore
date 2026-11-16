@@ -7,9 +7,9 @@ namespace hier_restore {
 void HierRestoreWorker::log_tree(Scope *s, int depth)
 {
 	log("  %*s%s  [%s]  cells=%d\n", depth * 2, "", s == root ? "<top>" : s->flat_name.c_str(), s->module.c_str(), s->cells);
-	for (auto c : all_scopes)
-		if (c->parent == s)
-			log_tree(c, depth + 1);
+	for (auto &[path, c] : scopes)
+		if (c.parent == s)
+			log_tree(&c, depth + 1);
 }
 
 void HierRestoreWorker::log_summary()
@@ -33,9 +33,9 @@ void HierRestoreWorker::write_report(const std::string &filename)
 
 	os << "{\n  \"top\": " << json_str(log_id(top)) << ",\n  \"scopes\": [";
 	bool first = true;
-	for (auto s : all_scopes) {
-		os << (first ? "\n" : ",\n") << "    {\"path\": " << json_path(s->path) << ", \"module\": " << json_str(s->module)
-		   << ", \"cells\": " << s->cells << "}";
+	for (auto &[path, s] : scopes) {
+		os << (first ? "\n" : ",\n") << "    {\"path\": " << json_path(path) << ", \"module\": " << json_str(s.module)
+		   << ", \"cells\": " << s.cells << "}";
 		first = false;
 	}
 	os << "\n  ],\n  \"cells\": [";

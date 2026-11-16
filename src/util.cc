@@ -2,11 +2,6 @@
 
 namespace hier_restore {
 
-bool is_within(const Path &inner, const Path &outer)
-{
-	return inner.size() >= outer.size() && std::equal(outer.begin(), outer.end(), inner.begin());
-}
-
 Path common_ancestor(const Path &a, const Path &b)
 {
 	size_t n = 0;
@@ -71,13 +66,6 @@ const char *status_name(CellStatus s)
 	default:
 		return "unknown";
 	}
-}
-
-ScopeSet intersect(const ScopeSet &a, const ScopeSet &b)
-{
-	ScopeSet out;
-	std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), std::inserter(out, out.end()), ByPath());
-	return out;
 }
 
 std::string json_str(const std::string &s)

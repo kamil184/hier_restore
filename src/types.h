@@ -38,7 +38,6 @@ struct Scope {
 	std::string flat_name; // prefix that flatten put in front of the names of this instance's objects
 	std::string module;
 	std::vector<SrcRange> module_src;
-	RTLIL::Cell *info = nullptr; // the $scopeinfo cell, null for the top module
 	Scope *parent = nullptr;
 	int cells = 0; // cells placed here
 };
@@ -52,29 +51,14 @@ using ScopeSet = std::set<Scope *, ByPath>;
 struct CellInfo {
 	RTLIL::Cell *cell;
 	std::string name;
-
-	// Each group lists the instances one origin of the cell may lie in: several entries are several
-	// instances of the same module, several groups are logic merged from several places.
-	std::vector<ScopeSet> groups;
-	std::vector<const ScopeSet *> visible; // per named connected bit, the scopes that can see it
-	std::vector<RTLIL::SigBit> named;      // the connected bits with a reliable name
-	std::vector<RTLIL::SigBit> unnamed;    // connected bits without a reliable name
-
-	// Instances the cell can lie in as a whole. 'any' means nothing restricts it, an empty domain
-	// means no single instance fits and the cell holds logic of several.
-	bool any = false;
-	ScopeSet domain;
-
 	CellStatus status = CellStatus::Unknown;
 	Scope *scope = nullptr;
 };
 
-bool is_within(const Path &inner, const Path &outer);
 Path common_ancestor(const Path &a, const Path &b);
 std::string path_str(const Path &p);
 std::vector<SrcRange> parse_src(const std::string &src);
 const char *status_name(CellStatus s);
-ScopeSet intersect(const ScopeSet &a, const ScopeSet &b);
 std::string json_str(const std::string &s);
 std::string json_path(const Path &p);
 

@@ -2,22 +2,12 @@
 
 namespace hier_restore {
 
-Scope *HierRestoreWorker::add_scope(const Path &path, const std::string &flat_name, const std::string &module, const std::string &module_src)
-{
-	storage.emplace_back(new Scope);
-	Scope *s = storage.back().get();
-	s->path = path;
-	s->flat_name = flat_name;
-	s->module = module;
-	s->module_src = parse_src(module_src);
-	by_path[path] = s;
-	all_scopes.insert(s);
-	return s;
-}
-
+// Builds the tree of instances from the $scopeinfo cells, which flatten leaves for every instance.
 void HierRestoreWorker::collect_scopes()
 {
-	root = add_scope({}, "", log_id(top), top->get_string_attribute(ID::src));
+	root = &scopes[{}];
+	root->module = log_id(top);
+	root->module_src = parse_src(top->get_string_attribute(ID::src));
 
 	for (auto cell : top->cells()) {
 		if (cell->type != ID($scopeinfo) || !cell->hasParam(ID::TYPE) || cell->getParam(ID::TYPE).decode_string() != "module")
@@ -26,23 +16,25 @@ void HierRestoreWorker::collect_scopes()
 		// flatten only sets hdlname on nested instances; a direct child of the top module is named by its instance name
 		std::string hdlname = cell->get_string_attribute(ID::hdlname);
 		Path path = hdlname.empty() ? Path{flat_name} : split_tokens(hdlname, " ");
-		std::string module = cell->get_string_attribute(ID(module_hdlname));
-		if (module.empty())
-			module = cell->get_string_attribute(ID(module));
-		Scope *s = add_scope(path, flat_name, module, cell->get_string_attribute(ID(module_src)));
-		s->info = cell;
+		Scope &s = scopes[path];
+		s.path = path;
+		s.flat_name = flat_name;
+		s.module = cell->get_string_attribute(ID(module_hdlname));
+		if (s.module.empty())
+			s.module = cell->get_string_attribute(ID(module));
+		s.module_src = parse_src(cell->get_string_attribute(ID(module_src)));
 	}
-	if (storage.size() == 1)
+	if (scopes.size() == 1)
 		check_flattened_with_scopes();
 
-	for (auto &s : storage) {
-		if (s.get() == root)
+	for (auto &[path, s] : scopes) {
+		if (&s == root)
 			continue;
-		Path p = s->path;
+		Path p = path;
 		do {
 			p.pop_back();
-		} while (!p.empty() && !by_path.count(p));
-		s->parent = by_path.at(p);
+		} while (!p.empty() && !scopes.count(p));
+		s.parent = &scopes.at(p);
 	}
 }
 
@@ -54,8 +46,8 @@ std::pair<Scope *, std::string> HierRestoreWorker::wire_scope(RTLIL::Wire *wire)
 		Path p = split_tokens(hdlname, " ");
 		std::string local = p.back();
 		p.pop_back();
-		auto it = by_path.find(p);
-		return {it == by_path.end() ? nullptr : it->second, local};
+		auto it = scopes.find(p);
+		return {it == scopes.end() ? nullptr : &it->second, local};
 	}
 	// Wires of the top module keep their plain name and the source location inside the top module.
 	// Names made up by synthesis (autoname, abc) carry no or foreign source locations and are skipped.
@@ -79,41 +71,35 @@ void HierRestoreWorker::collect_bits()
 			if (bit.wire == nullptr)
 				continue;
 			bit_visible[bit].insert(s);
-			bit_named[bit].insert(s);
 			if (s->parent != nullptr)
 				bit_visible[bit].insert(s->parent);
 		}
 	}
-	// A net named in one instance lies in it. One named in several instances runs through their ports
-	// and lies in an enclosing instance as well, which its names do not tell.
-	for (auto &kv : bit_named)
-		if (kv.second.size() > 1)
-			kv.second = bit_visible.at(kv.first);
 }
 
 // All instances of the innermost module definition that contains the given source range.
 ScopeSet HierRestoreWorker::instances_at(const SrcRange &r)
 {
 	const SrcRange *best = nullptr;
-	for (auto &s : storage)
-		for (auto &def : s->module_src)
+	for (auto &[path, s] : scopes)
+		for (auto &def : s.module_src)
 			if (def.contains(r) && (best == nullptr || def.size() < best->size()))
 				best = &def;
 	ScopeSet out;
 	if (best == nullptr)
 		return out;
-	for (auto &s : storage)
-		for (auto &def : s->module_src)
+	for (auto &[path, s] : scopes)
+		for (auto &def : s.module_src)
 			if (def == *best)
-				out.insert(s.get());
+				out.insert(&s);
 	return out;
 }
 
 Scope *HierRestoreWorker::scope_at(Path p)
 {
-	while (!by_path.count(p))
+	while (!scopes.count(p))
 		p.pop_back();
-	return by_path.at(p);
+	return &scopes.at(p);
 }
 
 // A design without $scopeinfo cells either had no instances or lost them. 'flatten -noscopeinfo' does not

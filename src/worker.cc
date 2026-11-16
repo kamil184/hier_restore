@@ -18,20 +18,16 @@ void HierRestoreWorker::run()
 				    log_id(def));
 			continue;
 		}
-		cells.push_back(describe(cell));
+		cells.push_back(place(cell));
 	}
+	// sorted only so that the report lists the cells in the same order on every run
 	std::sort(cells.begin(), cells.end(), [](const CellInfo &x, const CellInfo &y) { return x.name < y.name; });
 
-	propagate();
-	for (auto &c : cells)
-		resolve(c);
-
-	for (auto &c : cells)
+	for (auto &c : cells) {
 		c.scope->cells++;
-
-	for (auto &c : cells)
 		// set_string_attribute() drops empty values, but the top module's path is the empty string
 		c.cell->attributes[ID(hier_scope)] = RTLIL::Const(path_str(c.scope->path));
+	}
 
 	place_wires();
 }

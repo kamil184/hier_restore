@@ -18,6 +18,7 @@ Independent of expect.json, every run is checked for these invariants:
   - every cell carries the hier_* attributes and they match the JSON report,
   - every wire carries hier_scope with a known instance,
   - statuses are known, unknown cells lie in the top module, the scope counts match the cells,
+  - no cell is placed in an instance its output signal does not exist in, found by simulation (simcheck.py),
   - the netlist is unchanged apart from the hier_* attributes,
   - a second run yields the identical report.
 """
@@ -31,7 +32,10 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import simcheck
 
 HERE = Path(__file__).resolve().parent
 CASES = [HERE / "cases", HERE / "examples"]
@@ -43,6 +47,8 @@ FLOWS = {
     # the $scopeinfo cells; the NetlistViewer synthesizes the same way for its restored view
     "gatemate": "synth_gatemate -top {top} -scopename -luttree -nomx8 -run :vlog",
 }
+# simulation models of the device cells, for the error check by simulation
+MODELS = {"ice40": "+/ice40/cells_sim.v", "gatemate": "+/gatemate/cells_sim.v"}
 
 CELL_STATUSES = ("unique", "ambiguous", "unknown")
 
@@ -65,6 +71,12 @@ def run_flow(case, flow, cfg, work):
     again, base_again = work / "report2.json", work / "base2.json"
     yosys(f"read_verilog {files}; {synth}; hier_restore -o {again}; write_json {base_again}", work / "run2.log")
     return base, annotated, report, again, base_again
+
+
+def placement_errors(case, flow, cfg, work, base, annotated):
+    files = [case / f for f in cfg.get("files", ["design.v"])]
+    errors = simcheck.find_errors(work, files, cfg.get("top", "top"), MODELS[flow], base, annotated)
+    return [f"cell {c} placed in {s}, but its output {p} exists only in {', '.join(w)}" for c, s, p, w in errors]
 
 
 def top_module(netlist):
@@ -168,6 +180,18 @@ def summary(rep):
     return " ".join(f"{s}={counts[s]}" for s in CELL_STATUSES if counts[s])
 
 
+def run_case(case, flow, cfg, work):
+    work.mkdir(parents=True)
+    try:
+        outputs = run_flow(case, flow, cfg, work)
+        rep, errors, notes = check_invariants(*outputs)
+        errors += placement_errors(case, flow, cfg, work, outputs[0], outputs[1])
+        errors += check_expectations(rep, cfg.get("expect", []), flow)
+    except Exception as ex:  # a broken run is reported like any other failure
+        rep, errors, notes = None, [str(ex)], []
+    return rep, errors, notes
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--case", action="append", help="run only these cases")
@@ -179,31 +203,29 @@ def main():
     if not PLUGIN.exists():
         sys.exit(f"{PLUGIN} not found, run make first")
 
-    failures = 0
     root = Path(tempfile.mkdtemp(prefix="hier_restore_tests_"))
+    jobs = []
     for case in sorted(p for d in CASES for p in d.iterdir() if (p / "expect.json").exists()):
         if args.case and case.name not in args.case:
             continue
         cfg = json.loads((case / "expect.json").read_text())
-        for flow in cfg.get("flows", list(FLOWS)):
-            if args.flow and flow not in args.flow:
-                continue
-            work = root / case.name / flow
-            work.mkdir(parents=True)
-            try:
-                rep, errors, notes = check_invariants(*run_flow(case, flow, cfg, work))
-                errors += check_expectations(rep, cfg.get("expect", []), flow)
-            except Exception as ex:  # a broken run is reported like any other failure
-                rep, errors, notes = None, [str(ex)], []
-            failures += bool(errors)
-            print(f"{'FAIL' if errors else 'ok  '} {case.name:<24} {flow:<8} {summary(rep) if rep else ''}")
-            for e in errors:
-                print(f"       {e}")
-            for n in notes:
-                print(f"       note: {n}")
-            if args.show and rep:
-                for s in rep["scopes"]:
-                    print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']}")
+        jobs += [(case, flow, cfg) for flow in cfg.get("flows", list(FLOWS)) if not args.flow or flow in args.flow]
+
+    # the runs are independent and spend their time in yosys, so they run side by side
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+        results = list(pool.map(lambda job: run_case(*job, root / job[0].name / job[1]), jobs))
+
+    failures = 0
+    for (case, flow, _), (rep, errors, notes) in zip(jobs, results):
+        failures += bool(errors)
+        print(f"{'FAIL' if errors else 'ok  '} {case.name:<24} {flow:<8} {summary(rep) if rep else ''}")
+        for e in errors:
+            print(f"       {e}")
+        for n in notes:
+            print(f"       note: {n}")
+        if args.show and rep:
+            for s in rep["scopes"]:
+                print(f"       {' '.join(s['path']) or '<top>':<40} cells={s['cells']}")
     if args.keep or failures:
         print(f"\nwork directories: {root}")
     else:

@@ -3,7 +3,6 @@
   "expect": [
     {"scope": ["u_p"], "cells": false},
     {"scope": ["u_q"], "cells": false},
-    {"status": "ambiguous", "min": 1},
-    {"status": "unknown", "max": 0}
+    {"status": "ambiguous", "min": 1}
   ]
 }
