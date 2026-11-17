@@ -1,0 +1,20 @@
+{
+  "include": [
+    "*.vhd",
+    "*.vhdl",
+    "*.v",
+    "*.vcd",
+    "vhdl_ls.toml",
+    "*.pcf"
+  ],
+  "exclude": [
+    "build"
+  ],
+  "loader": "openFpgaLoader",
+  "toolchain": "yosys",
+  "ossCad": {
+    "constraintFile": null
+  },
+  "topEntity": "top",
+  "board": "iCEBreaker V1.0e"
+}

@@ -1,14 +1,24 @@
-# build output
+# build output of the plugin
 *.so
+*.dll
+*.dylib
+*.o
 *.dSYM/
+yosys.def
+yosys.exe.a
 
-# output of demo.sh and manual runs
-hier.json
+# netlists, drawings and logs of manual runs
+*.json
+!tests/**/expect.json
+!demo/*.fpgaproj
 *.dot
 *.svg
+*.log
+
+# build output of the OneWare demo project
+demo/build/
 
 __pycache__/
 .DS_Store
-
-# logs of the NetlistReaderBackend when started from here
-*.log
+.vscode/
+.idea/
